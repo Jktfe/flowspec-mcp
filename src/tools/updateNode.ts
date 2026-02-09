@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { updateNodeViaApi } from '../db.js';
+import { updateNodeViaApi, getProject } from '../db.js';
+import { normaliseNodeData } from '../normalise.js';
 
 export const updateNodeSchema = z.object({
   projectId: z.string().describe('UUID of the project'),
@@ -13,7 +14,13 @@ export const updateNodeSchema = z.object({
 
 export async function handleUpdateNode(args: z.infer<typeof updateNodeSchema>) {
   const updates: Record<string, unknown> = {};
-  if (args.data) updates.data = args.data;
+  if (args.data) {
+    // Look up the existing node type so we can normalise correctly
+    const project = await getProject(args.projectId);
+    const existing = project?.canvas_state?.nodes?.find((n) => n.id === args.nodeId);
+    const nodeType = (existing?.type ?? 'datapoint') as 'datapoint' | 'component' | 'transform' | 'table';
+    updates.data = normaliseNodeData(nodeType, args.data);
+  }
   if (args.position) updates.position = args.position;
 
   const node = await updateNodeViaApi(args.projectId, args.nodeId, updates);

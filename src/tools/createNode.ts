@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createNodeViaApi } from '../db.js';
+import { normaliseNodeData } from '../normalise.js';
 
 export const createNodeSchema = z.object({
   projectId: z.string().describe('UUID of the project'),
@@ -12,10 +13,12 @@ export const createNodeSchema = z.object({
 });
 
 export async function handleCreateNode(args: z.infer<typeof createNodeSchema>) {
+  const normalisedData = normaliseNodeData(args.type, args.data);
+
   const node = await createNodeViaApi(args.projectId, {
     type: args.type,
     position: args.position,
-    data: args.data,
+    data: normalisedData,
   });
 
   if (!node) {
