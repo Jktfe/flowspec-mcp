@@ -46,7 +46,7 @@ Local mode connects to the FlowSpec desktop server at `http://localhost:3456`.
 |----------|----------|---------|-------------|
 | `FLOWSPEC_MODE` | No | `cloud` | `cloud` for direct Neon SQL, `local` for desktop server HTTP |
 | `DATABASE_URL` | Cloud mode | — | Neon Postgres connection string |
-| `FLOWSPEC_USER_ID` | Cloud mode | — | Clerk user ID for project ownership |
+| `FLOWSPEC_USER_ID` | Cloud mode | — | Clerk user ID — find yours at [flowspec.app/account](https://flowspec.app/account) |
 | `FLOWSPEC_LOCAL_URL` | No | `http://localhost:3456` | Desktop server URL (local mode) |
 
 ## Available Tools
