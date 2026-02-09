@@ -335,3 +335,329 @@ export async function deleteEdgeViaApi(projectId: string, edgeId: string): Promi
   `;
   return true;
 }
+
+// ─── v3.0 API functions ────────────────────────────────────────────
+
+export async function cloneProjectViaApi(projectId: string): Promise<string | null> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/clone`, { method: 'POST' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.id;
+  }
+
+  const project = await getProject(projectId);
+  if (!project) return null;
+
+  const rows = await sql!`
+    INSERT INTO projects (name, canvas_state, user_id)
+    VALUES (${project.name + ' (Copy)'}, ${JSON.stringify(project.canvas_state)}, ${FLOWSPEC_USER_ID!})
+    RETURNING id
+  `;
+  return (rows[0] as { id: string }).id;
+}
+
+export async function uploadImageViaApi(
+  base64Data: string,
+  filename: string,
+  contentType: string
+): Promise<{ url: string; width: number; height: number } | null> {
+  if (MODE !== 'local') {
+    throw new Error('Image upload is only supported in local mode');
+  }
+
+  const res = await fetchLocal('/api/images', {
+    method: 'POST',
+    body: JSON.stringify({ base64Data, filename, contentType }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function createScreenViaApi(
+  projectId: string,
+  name: string,
+  imageUrl?: string,
+  imageWidth?: number,
+  imageHeight?: number,
+  imageFilename?: string
+): Promise<{ id: string; name: string } | null> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/screens`, {
+      method: 'POST',
+      body: JSON.stringify({ name, imageUrl, imageWidth, imageHeight, imageFilename }),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  const project = await getProject(projectId);
+  if (!project) return null;
+
+  const screenId = randomUUID();
+  const newScreen = {
+    id: screenId,
+    name,
+    imageUrl: imageUrl ?? null,
+    imageWidth: imageWidth ?? null,
+    imageHeight: imageHeight ?? null,
+    imageFilename: imageFilename ?? null,
+    regions: [],
+  };
+
+  if (!project.canvas_state.screens) {
+    project.canvas_state.screens = [];
+  }
+  project.canvas_state.screens.push(newScreen);
+
+  await sql!`
+    UPDATE projects
+    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
+    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  `;
+  return { id: screenId, name };
+}
+
+export async function updateScreenViaApi(
+  projectId: string,
+  screenId: string,
+  updates: Partial<{ name: string; imageUrl: string; imageWidth: number; imageHeight: number }>
+): Promise<{ id: string; name: string } | null> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/screens/${screenId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  const project = await getProject(projectId);
+  if (!project || !project.canvas_state.screens) return null;
+  const screen = project.canvas_state.screens.find((s: any) => s.id === screenId);
+  if (!screen) return null;
+
+  Object.assign(screen, updates);
+
+  await sql!`
+    UPDATE projects
+    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
+    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  `;
+  return { id: screenId, name: screen.name };
+}
+
+export async function deleteScreenViaApi(
+  projectId: string,
+  screenId: string
+): Promise<boolean> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/screens/${screenId}`, { method: 'DELETE' });
+    return res.ok;
+  }
+
+  const project = await getProject(projectId);
+  if (!project || !project.canvas_state.screens) return false;
+  const idx = project.canvas_state.screens.findIndex((s: any) => s.id === screenId);
+  if (idx === -1) return false;
+
+  project.canvas_state.screens.splice(idx, 1);
+
+  await sql!`
+    UPDATE projects
+    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
+    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  `;
+  return true;
+}
+
+export async function addRegionViaApi(
+  projectId: string,
+  screenId: string,
+  region: {
+    label?: string;
+    position: { x: number; y: number };
+    size: { width: number; height: number };
+    elementIds?: string[];
+    componentNodeId?: string;
+  }
+): Promise<{ id: string; label?: string } | null> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/screens/${screenId}/regions`, {
+      method: 'POST',
+      body: JSON.stringify(region),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  const project = await getProject(projectId);
+  if (!project || !project.canvas_state.screens) return null;
+  const screen = project.canvas_state.screens.find((s: any) => s.id === screenId);
+  if (!screen) return null;
+
+  const regionId = randomUUID();
+  const newRegion = {
+    id: regionId,
+    label: region.label ?? null,
+    position: region.position,
+    size: region.size,
+    elementIds: region.elementIds ?? [],
+    componentNodeId: region.componentNodeId ?? null,
+  };
+
+  if (!screen.regions) screen.regions = [];
+  screen.regions.push(newRegion);
+
+  await sql!`
+    UPDATE projects
+    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
+    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  `;
+  return { id: regionId, label: region.label };
+}
+
+export async function updateRegionViaApi(
+  projectId: string,
+  screenId: string,
+  regionId: string,
+  updates: Partial<{
+    label: string;
+    position: { x: number; y: number };
+    size: { width: number; height: number };
+    elementIds: string[];
+  }>
+): Promise<{ id: string } | null> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/screens/${screenId}/regions/${regionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  const project = await getProject(projectId);
+  if (!project || !project.canvas_state.screens) return null;
+  const screen = project.canvas_state.screens.find((s: any) => s.id === screenId);
+  if (!screen || !screen.regions) return null;
+  const region = screen.regions.find((r: any) => r.id === regionId);
+  if (!region) return null;
+
+  Object.assign(region, updates);
+
+  await sql!`
+    UPDATE projects
+    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
+    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  `;
+  return { id: regionId };
+}
+
+export async function removeRegionViaApi(
+  projectId: string,
+  screenId: string,
+  regionId: string
+): Promise<boolean> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/screens/${screenId}/regions/${regionId}`, { method: 'DELETE' });
+    return res.ok;
+  }
+
+  const project = await getProject(projectId);
+  if (!project || !project.canvas_state.screens) return false;
+  const screen = project.canvas_state.screens.find((s: any) => s.id === screenId);
+  if (!screen || !screen.regions) return false;
+  const idx = screen.regions.findIndex((r: any) => r.id === regionId);
+  if (idx === -1) return false;
+
+  screen.regions.splice(idx, 1);
+
+  await sql!`
+    UPDATE projects
+    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
+    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  `;
+  return true;
+}
+
+export async function updateEdgeViaApi(
+  projectId: string,
+  edgeId: string,
+  updates: Partial<{
+    type: string;
+    label: string;
+    sourceHandle: string | null;
+    targetHandle: string | null;
+  }>
+): Promise<{ id: string } | null> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/edges/${edgeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  const project = await getProject(projectId);
+  if (!project) return null;
+  const edge = project.canvas_state.edges.find((e) => e.id === edgeId);
+  if (!edge) return null;
+
+  Object.assign(edge, updates);
+  if (updates.label !== undefined) {
+    if (!edge.data) edge.data = {};
+    edge.data.label = updates.label;
+  }
+
+  await sql!`
+    UPDATE projects
+    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
+    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  `;
+  return { id: edgeId };
+}
+
+export async function bulkImportCanvasState(
+  projectId: string,
+  canvasState: { nodes: any[]; edges: any[]; screens?: any[] },
+  merge: boolean
+): Promise<{ nodeCount: number; edgeCount: number; screenCount: number }> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/import`, {
+      method: 'POST',
+      body: JSON.stringify({ canvasState, merge }),
+    });
+    if (!res.ok) throw new Error(`Failed to import: ${res.status}`);
+    return res.json();
+  }
+
+  const project = await getProject(projectId);
+  if (!project) throw new Error('Project not found');
+
+  if (merge) {
+    // Merge mode: add new nodes/edges/screens
+    project.canvas_state.nodes.push(...canvasState.nodes);
+    project.canvas_state.edges.push(...canvasState.edges);
+    if (canvasState.screens) {
+      if (!project.canvas_state.screens) project.canvas_state.screens = [];
+      project.canvas_state.screens.push(...canvasState.screens);
+    }
+  } else {
+    // Replace mode: replace entire canvas state
+    project.canvas_state = canvasState as any;
+  }
+
+  await sql!`
+    UPDATE projects
+    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
+    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  `;
+
+  return {
+    nodeCount: canvasState.nodes.length,
+    edgeCount: canvasState.edges.length,
+    screenCount: canvasState.screens?.length ?? 0,
+  };
+}

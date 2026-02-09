@@ -65,7 +65,7 @@ interface ExportDataFlow {
 
 interface ExportScreenRegion {
   id: string;
-  label?: string;
+  label?: string | null;
   position: { x: number; y: number };
   size: { width: number; height: number };
   elements: Array<{
@@ -73,13 +73,13 @@ interface ExportScreenRegion {
     nodeLabel: string;
     nodeType: string;
   }>;
-  componentNodeId?: string;
+  componentNodeId?: string | null;
 }
 
 interface ExportScreen {
   id: string;
   name: string;
-  imageFilename?: string;
+  imageFilename?: string | null;
   regions: ExportScreenRegion[];
 }
 

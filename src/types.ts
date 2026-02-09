@@ -43,20 +43,20 @@ export interface TableData {
 // A rectangular region on a screen that groups multiple elements
 export interface ScreenRegion {
   id: string;
-  label?: string;
+  label?: string | null;
   position: { x: number; y: number }; // top-left corner, percentage (0-100)
   size: { width: number; height: number }; // percentage (0-100)
   elementIds: string[]; // references to main canvas node IDs
-  componentNodeId?: string; // when promoted, references a component node on the main canvas
+  componentNodeId?: string | null; // when promoted, references a component node on the main canvas
 }
 
 export interface Screen {
   id: string;
   name: string;
-  imageUrl: string;
-  imageWidth: number;
-  imageHeight: number;
-  imageFilename?: string;
+  imageUrl: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+  imageFilename?: string | null;
   regions: ScreenRegion[];
 }
 

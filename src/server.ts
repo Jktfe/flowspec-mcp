@@ -14,12 +14,24 @@ import { deleteNodeSchema, handleDeleteNode } from './tools/deleteNode.js';
 import { createEdgeSchema, handleCreateEdge } from './tools/createEdge.js';
 import { deleteEdgeSchema, handleDeleteEdge } from './tools/deleteEdge.js';
 import { analyseProjectSchema, handleAnalyseProject } from './tools/analyseProject.js';
+// v3 write tools
+import { importYamlSchema, handleImportYaml } from './tools/importYaml.js';
+import { autoLayoutSchema, handleAutoLayout } from './tools/autoLayout.js';
+import { uploadImageSchema, handleUploadImage } from './tools/uploadImage.js';
+import { createScreenSchema, handleCreateScreen } from './tools/createScreen.js';
+import { updateScreenSchema, handleUpdateScreen } from './tools/updateScreen.js';
+import { deleteScreenSchema, handleDeleteScreen } from './tools/deleteScreen.js';
+import { addRegionSchema, handleAddRegion } from './tools/addRegion.js';
+import { updateRegionSchema, handleUpdateRegion } from './tools/updateRegion.js';
+import { removeRegionSchema, handleRemoveRegion } from './tools/removeRegion.js';
+import { updateEdgeSchema, handleUpdateEdge } from './tools/updateEdge.js';
+import { cloneProjectSchema, handleCloneProject } from './tools/cloneProject.js';
 import { MODE } from './config.js';
 
 export function createServer() {
   const server = new McpServer({
     name: 'flowspec',
-    version: '2.0.0',
+    version: '3.0.0',
   });
 
   // ─── Read tools ──────────────────────────────────────────────────
@@ -124,7 +136,86 @@ export function createServer() {
     handleAnalyseProject
   );
 
-  console.error(`FlowSpec MCP v2.0.0 — mode: ${MODE}`);
+  // ─── Write tools (v3) ────────────────────────────────────────────
+
+  server.tool(
+    'flowspec_import_yaml',
+    'Import YAML specification to create/merge nodes, edges, and screens',
+    importYamlSchema.shape,
+    handleImportYaml
+  );
+
+  server.tool(
+    'flowspec_auto_layout',
+    'Apply automatic hierarchical layout (Dagre) to organize nodes',
+    autoLayoutSchema.shape,
+    handleAutoLayout
+  );
+
+  server.tool(
+    'flowspec_upload_image',
+    'Upload an image and get its URL with auto-detected dimensions',
+    uploadImageSchema.shape,
+    handleUploadImage
+  );
+
+  server.tool(
+    'flowspec_create_screen',
+    'Create a new wireframe screen with optional image',
+    createScreenSchema.shape,
+    handleCreateScreen
+  );
+
+  server.tool(
+    'flowspec_update_screen',
+    'Update screen properties (name, image)',
+    updateScreenSchema.shape,
+    handleUpdateScreen
+  );
+
+  server.tool(
+    'flowspec_delete_screen',
+    'Delete a wireframe screen and all its regions',
+    deleteScreenSchema.shape,
+    handleDeleteScreen
+  );
+
+  server.tool(
+    'flowspec_add_region',
+    'Add a region to a screen with % coordinates and element IDs',
+    addRegionSchema.shape,
+    handleAddRegion
+  );
+
+  server.tool(
+    'flowspec_update_region',
+    'Update region position, size, label, or element IDs',
+    updateRegionSchema.shape,
+    handleUpdateRegion
+  );
+
+  server.tool(
+    'flowspec_remove_region',
+    'Remove a region from a screen',
+    removeRegionSchema.shape,
+    handleRemoveRegion
+  );
+
+  server.tool(
+    'flowspec_update_edge',
+    'Update edge type, label, or handle positions',
+    updateEdgeSchema.shape,
+    handleUpdateEdge
+  );
+
+  server.tool(
+    'flowspec_clone_project',
+    'Clone a project for backup or branching',
+    cloneProjectSchema.shape,
+    handleCloneProject
+  );
+
+  console.error(`FlowSpec MCP v3.0.0 — mode: ${MODE}`);
 
   return server;
 }
