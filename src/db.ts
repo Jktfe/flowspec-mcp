@@ -15,7 +15,10 @@ if (MODE === 'cloud') {
   const DATABASE_URL = process.env.DATABASE_URL;
   if (!DATABASE_URL) throw new Error('DATABASE_URL environment variable is required in cloud mode');
   FLOWSPEC_USER_ID = process.env.FLOWSPEC_USER_ID ?? null;
-  if (!FLOWSPEC_USER_ID) throw new Error('FLOWSPEC_USER_ID environment variable is required in cloud mode');
+  if (!FLOWSPEC_USER_ID) throw new Error(
+    'FLOWSPEC_USER_ID environment variable is required in cloud mode.\n' +
+    'Find your User ID at: https://flowspec.app/account (under "MCP Configuration").'
+  );
   sql = neon(DATABASE_URL) as unknown as NeonSql;
 }
 
