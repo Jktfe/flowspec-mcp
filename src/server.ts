@@ -52,7 +52,7 @@ export function createServer() {
 
   server.tool(
     'flowspec_get_project',
-    'Get raw canvas_state JSON for a FlowSpec project',
+    'Get project data (nodes, edges, screens) for a FlowSpec project',
     getProjectSchema.shape,
     handleGetProject
   );

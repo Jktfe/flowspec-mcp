@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { neon } from '@neondatabase/serverless';
-import type { Project, CanvasNode, CanvasEdge } from './types.js';
+import type { Project, CanvasNode, CanvasEdge, Screen, ScreenRegion } from './types.js';
 import { MODE, LOCAL_API_BASE, getLocalAuthToken } from './config.js';
 
 // ─── Cloud mode (direct Neon SQL) ──────────────────────────────────
@@ -20,6 +20,162 @@ if (MODE === 'cloud') {
     'Find your User ID at: https://flowspec.app/account (under "MCP Configuration").'
   );
   sql = neon(DATABASE_URL) as unknown as NeonSql;
+}
+
+// ─── DB row types (normalized schema v4) ────────────────────────────
+
+interface NodeRow {
+  id: string;
+  project_id: string;
+  type: string;
+  position_x: number;
+  position_y: number;
+  label: string | null;
+  data: Record<string, unknown>;
+}
+
+interface EdgeRow {
+  id: string;
+  project_id: string;
+  source: string;
+  target: string;
+  type: string;
+  data: Record<string, unknown>;
+}
+
+interface ScreenRow {
+  id: string;
+  project_id: string;
+  name: string;
+  image_url: string;
+  local_image_path: string | null;
+  image_filename: string | null;
+  image_width: number;
+  image_height: number;
+}
+
+interface RegionRow {
+  id: string;
+  screen_id: string;
+  project_id: string;
+  label: string | null;
+  position_x: number;
+  position_y: number;
+  size_width: number;
+  size_height: number;
+  component_node_id: string | null;
+}
+
+interface RegionElementRow {
+  region_id: string;
+  node_id: string;
+  position_order: number;
+}
+
+// ─── Helper: reconstruct canvas_state from normalized rows ──────────
+
+function buildCanvasState(
+  nodes: NodeRow[],
+  edges: EdgeRow[],
+  screens: ScreenRow[],
+  regions: RegionRow[],
+  regionElements: RegionElementRow[]
+): Project['canvas_state'] {
+  const canvasNodes: CanvasNode[] = nodes.map(n => ({
+    id: n.id,
+    type: n.type,
+    position: { x: n.position_x, y: n.position_y },
+    data: { ...n.data, label: n.label ?? n.data.label }
+  }));
+
+  const canvasEdges: CanvasEdge[] = edges.map(e => ({
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    type: e.type,
+    data: e.data
+  }));
+
+  const canvasScreens: Screen[] = screens.map(s => {
+    const screenRegions: ScreenRegion[] = regions
+      .filter(r => r.screen_id === s.id)
+      .map(r => {
+        const elementIds = regionElements
+          .filter(re => re.region_id === r.id)
+          .sort((a, b) => a.position_order - b.position_order)
+          .map(re => re.node_id);
+
+        return {
+          id: r.id,
+          label: r.label ?? undefined,
+          position: { x: r.position_x, y: r.position_y },
+          size: { width: r.size_width, height: r.size_height },
+          elementIds,
+          componentNodeId: r.component_node_id ?? undefined
+        };
+      });
+
+    return {
+      id: s.id,
+      name: s.name,
+      imageUrl: s.image_url,
+      imageWidth: s.image_width,
+      imageHeight: s.image_height,
+      imageFilename: s.image_filename ?? undefined,
+      regions: screenRegions
+    };
+  });
+
+  return {
+    nodes: canvasNodes,
+    edges: canvasEdges,
+    screens: canvasScreens.length > 0 ? canvasScreens : undefined
+  };
+}
+
+// ─── Helper: fetch full project from normalized tables (cloud) ──────
+
+async function getProjectFromNormalized(projectId: string): Promise<Project | null> {
+  const projectRows = await sql!`
+    SELECT id, name, thumbnail_url, user_id, is_public, created_at, updated_at
+    FROM projects
+    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  `;
+  if (projectRows.length === 0) return null;
+  const meta = projectRows[0];
+
+  const [nodesRaw, edgesRaw, screensRaw, regionsRaw, regionElementsRaw] = await Promise.all([
+    sql!`SELECT id, project_id, type, position_x, position_y, label, data FROM nodes WHERE project_id = ${projectId}`,
+    sql!`SELECT id, project_id, source, target, type, data FROM edges WHERE project_id = ${projectId}`,
+    sql!`SELECT id, project_id, name, image_url, local_image_path, image_filename, image_width, image_height FROM screens WHERE project_id = ${projectId}`,
+    sql!`SELECT id, screen_id, project_id, label, position_x, position_y, size_width, size_height, component_node_id FROM screen_regions WHERE project_id = ${projectId}`,
+    sql!`
+      SELECT re.region_id, re.node_id, re.position_order
+      FROM region_elements re
+      INNER JOIN screen_regions sr ON re.region_id = sr.id
+      WHERE sr.project_id = ${projectId}
+      ORDER BY re.region_id, re.position_order
+    `
+  ]);
+
+  const canvas_state = buildCanvasState(
+    nodesRaw as unknown as NodeRow[],
+    edgesRaw as unknown as EdgeRow[],
+    screensRaw as unknown as ScreenRow[],
+    regionsRaw as unknown as RegionRow[],
+    regionElementsRaw as unknown as RegionElementRow[]
+  );
+
+  return {
+    id: meta.id as string,
+    name: meta.name as string,
+    canvas_state,
+    thumbnail_url: (meta.thumbnail_url as string) ?? null,
+    user_id: meta.user_id as string,
+    is_public: meta.is_public as boolean,
+    created_at: meta.created_at as string,
+    updated_at: meta.updated_at as string
+  };
 }
 
 // ─── Local mode (HTTP to desktop server) ───────────────────────────
@@ -62,12 +218,7 @@ export async function getProject(projectId: string): Promise<Project | null> {
     return res.json();
   }
 
-  const rows = await sql!`
-    SELECT id, name, canvas_state, thumbnail_url, user_id, is_public, created_at, updated_at
-    FROM projects
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
-  `;
-  return (rows[0] as unknown as Project) ?? null;
+  return getProjectFromNormalized(projectId);
 }
 
 export async function searchNodes(
@@ -75,7 +226,6 @@ export async function searchNodes(
   nodeType?: string
 ): Promise<Array<{ projectId: string; projectName: string; nodeId: string; nodeType: string; label: string }>> {
   if (MODE === 'local') {
-    // In local mode, fetch all projects and search client-side (same logic as cloud)
     const res = await fetchLocal('/api/projects');
     const summaries: Array<{ id: string; name: string }> = await res.json();
     const results: Array<{ projectId: string; projectName: string; nodeId: string; nodeType: string; label: string }> = [];
@@ -105,47 +255,29 @@ export async function searchNodes(
     return results;
   }
 
+  // Cloud mode: indexed query on normalized nodes table
+  const typeFilter = nodeType ? nodeType : null;
   const rows = await sql!`
-    SELECT id, name, canvas_state
-    FROM projects
-    WHERE user_id = ${FLOWSPEC_USER_ID!}
+    SELECT n.id AS node_id, n.type AS node_type, n.label,
+           p.id AS project_id, p.name AS project_name
+    FROM nodes n
+    INNER JOIN projects p ON n.project_id = p.id
+    WHERE p.user_id = ${FLOWSPEC_USER_ID!}
+      AND n.type != 'image'
+      AND n.label ILIKE ${'%' + query + '%'}
+      AND (${typeFilter}::text IS NULL OR n.type = ${typeFilter})
   `;
 
-  const results: Array<{
-    projectId: string;
-    projectName: string;
-    nodeId: string;
-    nodeType: string;
-    label: string;
-  }> = [];
-
-  const lowerQuery = query.toLowerCase();
-
-  for (const row of rows) {
-    const project = row as unknown as Project;
-    const nodes = project.canvas_state?.nodes ?? [];
-
-    for (const node of nodes) {
-      if (node.type === 'image') continue;
-      if (nodeType && node.type !== nodeType) continue;
-
-      const label = (node.data?.label as string) ?? '';
-      if (label.toLowerCase().includes(lowerQuery)) {
-        results.push({
-          projectId: project.id,
-          projectName: project.name,
-          nodeId: node.id,
-          nodeType: node.type,
-          label,
-        });
-      }
-    }
-  }
-
-  return results;
+  return rows.map(row => ({
+    projectId: row.project_id as string,
+    projectName: row.project_name as string,
+    nodeId: row.node_id as string,
+    nodeType: row.node_type as string,
+    label: row.label as string
+  }));
 }
 
-// ─── Write operations (local mode only for now) ────────────────────
+// ─── Write operations ───────────────────────────────────────────────
 
 export async function createProjectViaApi(name: string, canvasState?: unknown): Promise<Project> {
   if (MODE === 'local') {
@@ -157,13 +289,38 @@ export async function createProjectViaApi(name: string, canvasState?: unknown): 
     return res.json();
   }
 
-  // Cloud mode: direct SQL insert
-  const rows = await sql!`
-    INSERT INTO projects (name, canvas_state, user_id)
-    VALUES (${name}, ${JSON.stringify(canvasState ?? { nodes: [], edges: [] })}, ${FLOWSPEC_USER_ID!})
-    RETURNING id, name, canvas_state, thumbnail_url, created_at, updated_at
+  // Cloud mode: insert project metadata, then decompose canvas_state into normalized tables
+  const projectId = randomUUID();
+  await sql!`
+    INSERT INTO projects (id, name, user_id, created_at, updated_at)
+    VALUES (${projectId}, ${name}, ${FLOWSPEC_USER_ID!}, NOW(), NOW())
   `;
-  return rows[0] as unknown as Project;
+
+  // If canvas_state provided, decompose into normalized tables
+  const cs = (canvasState ?? { nodes: [], edges: [] }) as { nodes?: any[]; edges?: any[]; screens?: any[] };
+  if (cs.nodes && cs.nodes.length > 0) {
+    for (const node of cs.nodes) {
+      const nodeId = node.id ?? randomUUID();
+      await sql!`
+        INSERT INTO nodes (id, project_id, type, position_x, position_y, label, data, created_at, updated_at)
+        VALUES (${nodeId}, ${projectId}, ${node.type ?? 'datapoint'}, ${node.position?.x ?? 0}, ${node.position?.y ?? 0},
+                ${node.data?.label ?? null}, ${JSON.stringify(node.data ?? {})}::jsonb, NOW(), NOW())
+      `;
+    }
+  }
+  if (cs.edges && cs.edges.length > 0) {
+    for (const edge of cs.edges) {
+      const edgeId = edge.id ?? randomUUID();
+      await sql!`
+        INSERT INTO edges (id, project_id, source, target, type, data, created_at, updated_at)
+        VALUES (${edgeId}, ${projectId}, ${edge.source}, ${edge.target},
+                ${edge.data?.edgeType ?? edge.type ?? 'flows-to'}, ${JSON.stringify(edge.data ?? {})}::jsonb, NOW(), NOW())
+      `;
+    }
+  }
+
+  const project = await getProjectFromNormalized(projectId);
+  return project!;
 }
 
 export async function updateProjectViaApi(projectId: string, updates: { name?: string; canvas_state?: unknown }): Promise<Project | null> {
@@ -176,17 +333,81 @@ export async function updateProjectViaApi(projectId: string, updates: { name?: s
     return res.json();
   }
 
-  const name = updates.name;
-  const canvasState = updates.canvas_state;
-  const rows = await sql!`
-    UPDATE projects
-    SET name = COALESCE(${name ?? null}, name),
-        canvas_state = COALESCE(${canvasState ? JSON.stringify(canvasState) : null}::jsonb, canvas_state),
-        updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
-    RETURNING id, name, canvas_state, thumbnail_url, created_at, updated_at
-  `;
-  return (rows[0] as unknown as Project) ?? null;
+  // Cloud mode: update name if provided
+  if (updates.name) {
+    await sql!`
+      UPDATE projects SET name = ${updates.name}, updated_at = NOW()
+      WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+    `;
+  }
+
+  // If canvas_state provided, replace all entities
+  if (updates.canvas_state) {
+    const cs = updates.canvas_state as { nodes?: any[]; edges?: any[]; screens?: any[] };
+
+    // Delete existing entities (cascade handles region_elements)
+    await sql!`DELETE FROM nodes WHERE project_id = ${projectId}`;
+    await sql!`DELETE FROM edges WHERE project_id = ${projectId}`;
+    await sql!`DELETE FROM screens WHERE project_id = ${projectId}`;
+
+    // Re-insert nodes
+    if (cs.nodes) {
+      for (const node of cs.nodes) {
+        const nodeId = node.id ?? randomUUID();
+        await sql!`
+          INSERT INTO nodes (id, project_id, type, position_x, position_y, label, data, created_at, updated_at)
+          VALUES (${nodeId}, ${projectId}, ${node.type ?? 'datapoint'}, ${node.position?.x ?? 0}, ${node.position?.y ?? 0},
+                  ${node.data?.label ?? null}, ${JSON.stringify(node.data ?? {})}::jsonb, NOW(), NOW())
+        `;
+      }
+    }
+
+    // Re-insert edges
+    if (cs.edges) {
+      for (const edge of cs.edges) {
+        const edgeId = edge.id ?? randomUUID();
+        await sql!`
+          INSERT INTO edges (id, project_id, source, target, type, data, created_at, updated_at)
+          VALUES (${edgeId}, ${projectId}, ${edge.source}, ${edge.target},
+                  ${edge.data?.edgeType ?? edge.type ?? 'flows-to'}, ${JSON.stringify(edge.data ?? {})}::jsonb, NOW(), NOW())
+        `;
+      }
+    }
+
+    // Re-insert screens + regions + region_elements
+    if (cs.screens) {
+      for (const screen of cs.screens) {
+        const screenId = screen.id ?? randomUUID();
+        await sql!`
+          INSERT INTO screens (id, project_id, name, image_url, image_filename, image_width, image_height, created_at, updated_at)
+          VALUES (${screenId}, ${projectId}, ${screen.name}, ${screen.imageUrl ?? ''}, ${screen.imageFilename ?? null},
+                  ${screen.imageWidth ?? 0}, ${screen.imageHeight ?? 0}, NOW(), NOW())
+        `;
+        if (screen.regions) {
+          for (const region of screen.regions) {
+            const regionId = region.id ?? randomUUID();
+            await sql!`
+              INSERT INTO screen_regions (id, screen_id, project_id, label, position_x, position_y, size_width, size_height, component_node_id, created_at, updated_at)
+              VALUES (${regionId}, ${screenId}, ${projectId}, ${region.label ?? null},
+                      ${region.position?.x ?? 0}, ${region.position?.y ?? 0},
+                      ${region.size?.width ?? 0}, ${region.size?.height ?? 0},
+                      ${region.componentNodeId ?? null}, NOW(), NOW())
+            `;
+            if (region.elementIds) {
+              for (let i = 0; i < region.elementIds.length; i++) {
+                await sql!`
+                  INSERT INTO region_elements (region_id, node_id, position_order, created_at)
+                  VALUES (${regionId}, ${region.elementIds[i]}, ${i}, NOW())
+                `;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return getProjectFromNormalized(projectId);
 }
 
 export async function deleteProjectViaApi(projectId: string): Promise<boolean> {
@@ -216,20 +437,19 @@ export async function createNodeViaApi(
     return res.json();
   }
 
-  // Cloud mode: read-modify-write on canvas_state
-  const project = await getProject(projectId);
-  if (!project) return null;
+  // Verify project ownership
+  const check = await sql!`SELECT id FROM projects WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}`;
+  if (check.length === 0) return null;
 
   const nodeId = randomUUID();
-  const newNode = { id: nodeId, ...node };
-  project.canvas_state.nodes.push(newNode as CanvasNode);
-
+  const label = (node.data.label as string) ?? null;
   await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+    INSERT INTO nodes (id, project_id, type, position_x, position_y, label, data, created_at, updated_at)
+    VALUES (${nodeId}, ${projectId}, ${node.type}, ${node.position.x}, ${node.position.y},
+            ${label}, ${JSON.stringify(node.data)}::jsonb, NOW(), NOW())
   `;
-  return newNode;
+
+  return { id: nodeId, type: node.type, position: node.position, data: node.data };
 }
 
 export async function updateNodeViaApi(
@@ -246,21 +466,38 @@ export async function updateNodeViaApi(
     return res.json();
   }
 
-  const project = await getProject(projectId);
-  if (!project) return null;
-  const idx = project.canvas_state.nodes.findIndex((n) => n.id === nodeId);
-  if (idx === -1) return null;
+  // Fetch current node
+  const nodeRows = await sql!`
+    SELECT id, type, position_x, position_y, label, data
+    FROM nodes WHERE id = ${nodeId} AND project_id = ${projectId}
+  `;
+  if (nodeRows.length === 0) return null;
 
-  const existing = project.canvas_state.nodes[idx];
-  const updated = { ...existing, ...updates, id: nodeId, data: { ...existing.data, ...(updates.data as Record<string, unknown> ?? {}) } };
-  project.canvas_state.nodes[idx] = updated as CanvasNode;
+  const existing = nodeRows[0];
+  const existingData = existing.data as Record<string, unknown>;
+  const updatedData = updates.data
+    ? { ...existingData, ...(updates.data as Record<string, unknown>) }
+    : existingData;
+
+  const position = updates.position as { x: number; y: number } | undefined;
+  const label = updatedData.label as string ?? existing.label;
 
   await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+    UPDATE nodes
+    SET position_x = COALESCE(${position?.x ?? null}, position_x),
+        position_y = COALESCE(${position?.y ?? null}, position_y),
+        label = ${label},
+        data = ${JSON.stringify(updatedData)}::jsonb,
+        updated_at = NOW()
+    WHERE id = ${nodeId} AND project_id = ${projectId}
   `;
-  return updated;
+
+  return {
+    id: nodeId,
+    type: updates.type ?? existing.type,
+    position: position ?? { x: existing.position_x as number, y: existing.position_y as number },
+    data: updatedData
+  };
 }
 
 export async function deleteNodeViaApi(projectId: string, nodeId: string): Promise<boolean> {
@@ -269,22 +506,12 @@ export async function deleteNodeViaApi(projectId: string, nodeId: string): Promi
     return res.ok;
   }
 
-  const project = await getProject(projectId);
-  if (!project) return false;
-  const idx = project.canvas_state.nodes.findIndex((n) => n.id === nodeId);
-  if (idx === -1) return false;
-
-  project.canvas_state.nodes.splice(idx, 1);
-  project.canvas_state.edges = project.canvas_state.edges.filter(
-    (e) => e.source !== nodeId && e.target !== nodeId
-  );
-
-  await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  // Edges cascade-delete via FK, so just delete the node
+  const rows = await sql!`
+    DELETE FROM nodes WHERE id = ${nodeId} AND project_id = ${projectId}
+    RETURNING id
   `;
-  return true;
+  return rows.length > 0;
 }
 
 export async function createEdgeViaApi(
@@ -300,19 +527,20 @@ export async function createEdgeViaApi(
     return res.json();
   }
 
-  const project = await getProject(projectId);
-  if (!project) return null;
+  // Verify project ownership
+  const check = await sql!`SELECT id FROM projects WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}`;
+  if (check.length === 0) return null;
 
   const edgeId = randomUUID();
-  const newEdge = { id: edgeId, source: edge.source, target: edge.target, type: edge.type ?? 'typed', data: edge.data ?? {} };
-  project.canvas_state.edges.push(newEdge as CanvasEdge);
+  const edgeType = edge.data?.edgeType as string ?? edge.type ?? 'flows-to';
+  const data = edge.data ?? {};
 
   await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+    INSERT INTO edges (id, project_id, source, target, type, data, created_at, updated_at)
+    VALUES (${edgeId}, ${projectId}, ${edge.source}, ${edge.target}, ${edgeType}, ${JSON.stringify(data)}::jsonb, NOW(), NOW())
   `;
-  return newEdge;
+
+  return { id: edgeId, source: edge.source, target: edge.target, type: edgeType, data };
 }
 
 export async function deleteEdgeViaApi(projectId: string, edgeId: string): Promise<boolean> {
@@ -321,19 +549,11 @@ export async function deleteEdgeViaApi(projectId: string, edgeId: string): Promi
     return res.ok;
   }
 
-  const project = await getProject(projectId);
-  if (!project) return false;
-  const idx = project.canvas_state.edges.findIndex((e) => e.id === edgeId);
-  if (idx === -1) return false;
-
-  project.canvas_state.edges.splice(idx, 1);
-
-  await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  const rows = await sql!`
+    DELETE FROM edges WHERE id = ${edgeId} AND project_id = ${projectId}
+    RETURNING id
   `;
-  return true;
+  return rows.length > 0;
 }
 
 // ─── v3.0 API functions ────────────────────────────────────────────
@@ -346,15 +566,15 @@ export async function cloneProjectViaApi(projectId: string): Promise<string | nu
     return data.id;
   }
 
-  const project = await getProject(projectId);
+  const project = await getProjectFromNormalized(projectId);
   if (!project) return null;
 
-  const rows = await sql!`
-    INSERT INTO projects (name, canvas_state, user_id)
-    VALUES (${project.name + ' (Copy)'}, ${JSON.stringify(project.canvas_state)}, ${FLOWSPEC_USER_ID!})
-    RETURNING id
-  `;
-  return (rows[0] as { id: string }).id;
+  // Create new project with cloned canvas_state
+  const newProject = await createProjectViaApi(
+    project.name + ' (Copy)',
+    project.canvas_state
+  );
+  return newProject.id;
 }
 
 export async function uploadImageViaApi(
@@ -391,30 +611,17 @@ export async function createScreenViaApi(
     return res.json();
   }
 
-  const project = await getProject(projectId);
-  if (!project) return null;
+  // Verify project ownership
+  const check = await sql!`SELECT id FROM projects WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}`;
+  if (check.length === 0) return null;
 
   const screenId = randomUUID();
-  const newScreen = {
-    id: screenId,
-    name,
-    imageUrl: imageUrl ?? null,
-    imageWidth: imageWidth ?? null,
-    imageHeight: imageHeight ?? null,
-    imageFilename: imageFilename ?? null,
-    regions: [],
-  };
-
-  if (!project.canvas_state.screens) {
-    project.canvas_state.screens = [];
-  }
-  project.canvas_state.screens.push(newScreen);
-
   await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+    INSERT INTO screens (id, project_id, name, image_url, image_filename, image_width, image_height, created_at, updated_at)
+    VALUES (${screenId}, ${projectId}, ${name}, ${imageUrl ?? ''}, ${imageFilename ?? null},
+            ${imageWidth ?? 0}, ${imageHeight ?? 0}, NOW(), NOW())
   `;
+
   return { id: screenId, name };
 }
 
@@ -432,19 +639,24 @@ export async function updateScreenViaApi(
     return res.json();
   }
 
-  const project = await getProject(projectId);
-  if (!project || !project.canvas_state.screens) return null;
-  const screen = project.canvas_state.screens.find((s: any) => s.id === screenId);
-  if (!screen) return null;
-
-  Object.assign(screen, updates);
+  // Verify screen exists in project
+  const screenRows = await sql!`
+    SELECT id, name FROM screens WHERE id = ${screenId} AND project_id = ${projectId}
+  `;
+  if (screenRows.length === 0) return null;
 
   await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+    UPDATE screens
+    SET name = COALESCE(${updates.name ?? null}, name),
+        image_url = COALESCE(${updates.imageUrl ?? null}, image_url),
+        image_width = COALESCE(${updates.imageWidth ?? null}, image_width),
+        image_height = COALESCE(${updates.imageHeight ?? null}, image_height),
+        updated_at = NOW()
+    WHERE id = ${screenId} AND project_id = ${projectId}
   `;
-  return { id: screenId, name: screen.name };
+
+  const updatedName = updates.name ?? screenRows[0].name as string;
+  return { id: screenId, name: updatedName };
 }
 
 export async function deleteScreenViaApi(
@@ -456,19 +668,12 @@ export async function deleteScreenViaApi(
     return res.ok;
   }
 
-  const project = await getProject(projectId);
-  if (!project || !project.canvas_state.screens) return false;
-  const idx = project.canvas_state.screens.findIndex((s: any) => s.id === screenId);
-  if (idx === -1) return false;
-
-  project.canvas_state.screens.splice(idx, 1);
-
-  await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  // Cascade deletes regions and region_elements via FK
+  const rows = await sql!`
+    DELETE FROM screens WHERE id = ${screenId} AND project_id = ${projectId}
+    RETURNING id
   `;
-  return true;
+  return rows.length > 0;
 }
 
 export async function addRegionViaApi(
@@ -491,29 +696,31 @@ export async function addRegionViaApi(
     return res.json();
   }
 
-  const project = await getProject(projectId);
-  if (!project || !project.canvas_state.screens) return null;
-  const screen = project.canvas_state.screens.find((s: any) => s.id === screenId);
-  if (!screen) return null;
+  // Verify screen exists
+  const screenCheck = await sql!`
+    SELECT id FROM screens WHERE id = ${screenId} AND project_id = ${projectId}
+  `;
+  if (screenCheck.length === 0) return null;
 
   const regionId = randomUUID();
-  const newRegion = {
-    id: regionId,
-    label: region.label ?? null,
-    position: region.position,
-    size: region.size,
-    elementIds: region.elementIds ?? [],
-    componentNodeId: region.componentNodeId ?? null,
-  };
-
-  if (!screen.regions) screen.regions = [];
-  screen.regions.push(newRegion);
-
   await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+    INSERT INTO screen_regions (id, screen_id, project_id, label, position_x, position_y, size_width, size_height, component_node_id, created_at, updated_at)
+    VALUES (${regionId}, ${screenId}, ${projectId}, ${region.label ?? null},
+            ${region.position.x}, ${region.position.y},
+            ${region.size.width}, ${region.size.height},
+            ${region.componentNodeId ?? null}, NOW(), NOW())
   `;
+
+  // Insert element references
+  if (region.elementIds && region.elementIds.length > 0) {
+    for (let i = 0; i < region.elementIds.length; i++) {
+      await sql!`
+        INSERT INTO region_elements (region_id, node_id, position_order, created_at)
+        VALUES (${regionId}, ${region.elementIds[i]}, ${i}, NOW())
+      `;
+    }
+  }
+
   return { id: regionId, label: region.label };
 }
 
@@ -537,20 +744,35 @@ export async function updateRegionViaApi(
     return res.json();
   }
 
-  const project = await getProject(projectId);
-  if (!project || !project.canvas_state.screens) return null;
-  const screen = project.canvas_state.screens.find((s: any) => s.id === screenId);
-  if (!screen || !screen.regions) return null;
-  const region = screen.regions.find((r: any) => r.id === regionId);
-  if (!region) return null;
-
-  Object.assign(region, updates);
-
-  await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  // Verify region exists
+  const regionCheck = await sql!`
+    SELECT id FROM screen_regions WHERE id = ${regionId} AND screen_id = ${screenId} AND project_id = ${projectId}
   `;
+  if (regionCheck.length === 0) return null;
+
+  // Update region fields
+  await sql!`
+    UPDATE screen_regions
+    SET label = COALESCE(${updates.label ?? null}, label),
+        position_x = COALESCE(${updates.position?.x ?? null}, position_x),
+        position_y = COALESCE(${updates.position?.y ?? null}, position_y),
+        size_width = COALESCE(${updates.size?.width ?? null}, size_width),
+        size_height = COALESCE(${updates.size?.height ?? null}, size_height),
+        updated_at = NOW()
+    WHERE id = ${regionId}
+  `;
+
+  // Replace element IDs if provided
+  if (updates.elementIds !== undefined) {
+    await sql!`DELETE FROM region_elements WHERE region_id = ${regionId}`;
+    for (let i = 0; i < updates.elementIds.length; i++) {
+      await sql!`
+        INSERT INTO region_elements (region_id, node_id, position_order, created_at)
+        VALUES (${regionId}, ${updates.elementIds[i]}, ${i}, NOW())
+      `;
+    }
+  }
+
   return { id: regionId };
 }
 
@@ -564,21 +786,12 @@ export async function removeRegionViaApi(
     return res.ok;
   }
 
-  const project = await getProject(projectId);
-  if (!project || !project.canvas_state.screens) return false;
-  const screen = project.canvas_state.screens.find((s: any) => s.id === screenId);
-  if (!screen || !screen.regions) return false;
-  const idx = screen.regions.findIndex((r: any) => r.id === regionId);
-  if (idx === -1) return false;
-
-  screen.regions.splice(idx, 1);
-
-  await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+  // Cascade deletes region_elements via FK
+  const rows = await sql!`
+    DELETE FROM screen_regions WHERE id = ${regionId} AND screen_id = ${screenId} AND project_id = ${projectId}
+    RETURNING id
   `;
-  return true;
+  return rows.length > 0;
 }
 
 export async function updateEdgeViaApi(
@@ -600,22 +813,24 @@ export async function updateEdgeViaApi(
     return res.json();
   }
 
-  const project = await getProject(projectId);
-  if (!project) return null;
-  const edge = project.canvas_state.edges.find((e) => e.id === edgeId);
-  if (!edge) return null;
+  // Verify edge exists
+  const edgeRows = await sql!`
+    SELECT id, data FROM edges WHERE id = ${edgeId} AND project_id = ${projectId}
+  `;
+  if (edgeRows.length === 0) return null;
 
-  Object.assign(edge, updates);
-  if (updates.label !== undefined) {
-    if (!edge.data) edge.data = {};
-    edge.data.label = updates.label;
-  }
+  const existingData = (edgeRows[0].data ?? {}) as Record<string, unknown>;
+  const newData = { ...existingData };
+  if (updates.label !== undefined) newData.label = updates.label;
 
   await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
+    UPDATE edges
+    SET type = COALESCE(${updates.type ?? null}, type),
+        data = ${JSON.stringify(newData)}::jsonb,
+        updated_at = NOW()
+    WHERE id = ${edgeId} AND project_id = ${projectId}
   `;
+
   return { id: edgeId };
 }
 
@@ -633,27 +848,68 @@ export async function bulkImportCanvasState(
     return res.json();
   }
 
-  const project = await getProject(projectId);
-  if (!project) throw new Error('Project not found');
+  // Verify project ownership
+  const check = await sql!`SELECT id FROM projects WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}`;
+  if (check.length === 0) throw new Error('Project not found');
 
-  if (merge) {
-    // Merge mode: add new nodes/edges/screens
-    project.canvas_state.nodes.push(...canvasState.nodes);
-    project.canvas_state.edges.push(...canvasState.edges);
-    if (canvasState.screens) {
-      if (!project.canvas_state.screens) project.canvas_state.screens = [];
-      project.canvas_state.screens.push(...canvasState.screens);
-    }
-  } else {
-    // Replace mode: replace entire canvas state
-    project.canvas_state = canvasState as any;
+  if (!merge) {
+    // Replace mode: clear existing entities first
+    await sql!`DELETE FROM nodes WHERE project_id = ${projectId}`;
+    await sql!`DELETE FROM edges WHERE project_id = ${projectId}`;
+    await sql!`DELETE FROM screens WHERE project_id = ${projectId}`;
   }
 
-  await sql!`
-    UPDATE projects
-    SET canvas_state = ${JSON.stringify(project.canvas_state)}::jsonb, updated_at = NOW()
-    WHERE id = ${projectId} AND user_id = ${FLOWSPEC_USER_ID!}
-  `;
+  // Insert nodes
+  for (const node of canvasState.nodes) {
+    const nodeId = node.id ?? randomUUID();
+    await sql!`
+      INSERT INTO nodes (id, project_id, type, position_x, position_y, label, data, created_at, updated_at)
+      VALUES (${nodeId}, ${projectId}, ${node.type ?? 'datapoint'}, ${node.position?.x ?? 0}, ${node.position?.y ?? 0},
+              ${node.data?.label ?? null}, ${JSON.stringify(node.data ?? {})}::jsonb, NOW(), NOW())
+    `;
+  }
+
+  // Insert edges
+  for (const edge of canvasState.edges) {
+    const edgeId = edge.id ?? randomUUID();
+    await sql!`
+      INSERT INTO edges (id, project_id, source, target, type, data, created_at, updated_at)
+      VALUES (${edgeId}, ${projectId}, ${edge.source}, ${edge.target},
+              ${edge.data?.edgeType ?? edge.type ?? 'flows-to'}, ${JSON.stringify(edge.data ?? {})}::jsonb, NOW(), NOW())
+    `;
+  }
+
+  // Insert screens + regions
+  if (canvasState.screens) {
+    for (const screen of canvasState.screens) {
+      const screenId = screen.id ?? randomUUID();
+      await sql!`
+        INSERT INTO screens (id, project_id, name, image_url, image_filename, image_width, image_height, created_at, updated_at)
+        VALUES (${screenId}, ${projectId}, ${screen.name}, ${screen.imageUrl ?? ''}, ${screen.imageFilename ?? null},
+                ${screen.imageWidth ?? 0}, ${screen.imageHeight ?? 0}, NOW(), NOW())
+      `;
+      if (screen.regions) {
+        for (const region of screen.regions) {
+          const regionId = region.id ?? randomUUID();
+          await sql!`
+            INSERT INTO screen_regions (id, screen_id, project_id, label, position_x, position_y, size_width, size_height, component_node_id, created_at, updated_at)
+            VALUES (${regionId}, ${screenId}, ${projectId}, ${region.label ?? null},
+                    ${region.position?.x ?? 0}, ${region.position?.y ?? 0},
+                    ${region.size?.width ?? 0}, ${region.size?.height ?? 0},
+                    ${region.componentNodeId ?? null}, NOW(), NOW())
+          `;
+          if (region.elementIds) {
+            for (let i = 0; i < region.elementIds.length; i++) {
+              await sql!`
+                INSERT INTO region_elements (region_id, node_id, position_order, created_at)
+                VALUES (${regionId}, ${region.elementIds[i]}, ${i}, NOW())
+              `;
+            }
+          }
+        }
+      }
+    }
+  }
 
   return {
     nodeCount: canvasState.nodes.length,
