@@ -31,7 +31,7 @@ import { MODE } from './config.js';
 export function createServer() {
   const server = new McpServer({
     name: 'flowspec',
-    version: '3.1.0',
+    version: '4.2.0',
   });
 
   // ─── Read tools ──────────────────────────────────────────────────
@@ -215,7 +215,7 @@ export function createServer() {
     handleCloneProject
   );
 
-  console.error(`FlowSpec MCP v3.1.0 — mode: ${MODE}`);
+  console.error(`FlowSpec MCP v4.2.0 — mode: ${MODE}`);
 
   return server;
 }
