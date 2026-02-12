@@ -75,7 +75,7 @@ export function createServer() {
 
   server.tool(
     'flowspec_create_project',
-    'Create a new FlowSpec project with a name and optional initial canvas state',
+    'Create a new FlowSpec project. Before building from a codebase, scan source files for @flowspec annotations (left by the codebase-indexer skill) to avoid re-discovering already-indexed elements.',
     createProjectSchema.shape,
     handleCreateProject
   );
@@ -96,7 +96,7 @@ export function createServer() {
 
   server.tool(
     'flowspec_create_node',
-    'Add a node (datapoint, component, transform, or table) to a project',
+    'Add a node (datapoint, component, transform, or table) to a project. Check source files for @flowspec annotations first — they contain pre-indexed element definitions (e.g. // @flowspec dp-name: type, source, constraints).',
     createNodeSchema.shape,
     handleCreateNode
   );
@@ -140,7 +140,7 @@ export function createServer() {
 
   server.tool(
     'flowspec_import_yaml',
-    'Import YAML specification to create/merge nodes, edges, and screens',
+    'Import specification to create/merge nodes, edges, and screens. If the codebase has @flowspec annotations, incorporate them into the spec before importing to avoid duplicating pre-indexed elements.',
     importYamlSchema.shape,
     handleImportYaml
   );
