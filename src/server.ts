@@ -31,7 +31,7 @@ import { MODE } from './config.js';
 export function createServer() {
   const server = new McpServer({
     name: 'flowspec',
-    version: '4.2.1',
+    version: '4.2.2',
   });
 
   // ─── Read tools ──────────────────────────────────────────────────
