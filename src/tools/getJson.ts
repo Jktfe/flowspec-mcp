@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import { getProject } from '../db.js';
-import { exportToYaml } from '../export/yamlExporter.js';
+import { exportToJson } from '../export/jsonExporter.js';
 
-export const getYamlSchema = z.object({
+export const getJsonSchema = z.object({
   projectId: z.string().describe('UUID of the FlowSpec project'),
 });
 
-export async function handleGetYaml(args: z.infer<typeof getYamlSchema>) {
+export async function handleGetJson(args: z.infer<typeof getJsonSchema>) {
   const project = await getProject(args.projectId);
 
   if (!project) {
@@ -20,9 +20,9 @@ export async function handleGetYaml(args: z.infer<typeof getYamlSchema>) {
   const edges = project.canvas_state?.edges ?? [];
   const screens = project.canvas_state?.screens ?? [];
 
-  const yaml = exportToYaml(nodes, edges, project.name, screens);
+  const json = exportToJson(nodes, edges, project.name, screens);
 
   return {
-    content: [{ type: 'text' as const, text: yaml }],
+    content: [{ type: 'text' as const, text: json }],
   };
 }

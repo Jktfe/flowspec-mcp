@@ -1,4 +1,3 @@
-import { stringify } from 'yaml';
 import type {
   CanvasNode,
   CanvasEdge,
@@ -95,10 +94,10 @@ interface ExportSpec {
 }
 
 /**
- * Exports canvas state to YAML specification optimised for Claude Code.
+ * Exports canvas state to JSON specification optimised for Claude Code.
  * Adapted from web app — uses plain interfaces instead of @xyflow/svelte types.
  */
-export function exportToYaml(
+export function exportToJson(
   nodes: CanvasNode[],
   edges: CanvasEdge[],
   projectName: string = 'Untitled Project',
@@ -231,10 +230,7 @@ export function exportToYaml(
     }));
   }
 
-  return stringify(spec, {
-    lineWidth: 120,
-    indent: 2,
-  });
+  return JSON.stringify(spec, null, 2);
 }
 
 function buildLocationMap(

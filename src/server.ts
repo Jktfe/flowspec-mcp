@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { listProjectsSchema, handleListProjects } from './tools/listProjects.js';
-import { getYamlSchema, handleGetYaml } from './tools/getYaml.js';
+import { getJsonSchema, handleGetJson } from './tools/getJson.js';
 import { getProjectSchema, handleGetProject } from './tools/getProject.js';
 import { searchNodesSchema, handleSearchNodes } from './tools/searchNodes.js';
 import { getScreenContextSchema, handleGetScreenContext } from './tools/getScreenContext.js';
@@ -16,7 +16,7 @@ import { deleteEdgeSchema, handleDeleteEdge } from './tools/deleteEdge.js';
 import { analyseProjectSchema, handleAnalyseProject } from './tools/analyseProject.js';
 import { validateProjectSchema, handleValidateProject } from './tools/validateProject.js';
 // v3 write tools
-import { importYamlSchema, handleImportYaml } from './tools/importYaml.js';
+import { importJsonSchema, handleImportJson } from './tools/importJson.js';
 import { autoLayoutSchema, handleAutoLayout } from './tools/autoLayout.js';
 import { uploadImageSchema, handleUploadImage } from './tools/uploadImage.js';
 import { createScreenSchema, handleCreateScreen } from './tools/createScreen.js';
@@ -32,7 +32,7 @@ import { MODE } from './config.js';
 export function createServer() {
   const server = new McpServer({
     name: 'flowspec',
-    version: '4.2.2',
+    version: '5.0.0',
   });
 
   // ─── Read tools ──────────────────────────────────────────────────
@@ -45,10 +45,10 @@ export function createServer() {
   );
 
   server.tool(
-    'flowspec_get_yaml',
-    'Get the full YAML spec for a FlowSpec project (optimised for Claude Code consumption)',
-    getYamlSchema.shape,
-    handleGetYaml
+    'flowspec_get_json',
+    'Get the full JSON spec for a FlowSpec project (optimised for Claude Code consumption)',
+    getJsonSchema.shape,
+    handleGetJson
   );
 
   server.tool(
@@ -67,7 +67,7 @@ export function createServer() {
 
   server.tool(
     'flowspec_get_screen_context',
-    'Get screen/region/element structure for a FlowSpec project (lightweight alternative to full YAML)',
+    'Get screen/region/element structure for a FlowSpec project (lightweight alternative to full JSON)',
     getScreenContextSchema.shape,
     handleGetScreenContext
   );
@@ -147,10 +147,10 @@ export function createServer() {
   // ─── Write tools (v3) ────────────────────────────────────────────
 
   server.tool(
-    'flowspec_import_yaml',
-    'Import specification to create/merge nodes, edges, and screens. If the codebase has @flowspec annotations, incorporate them into the spec before importing to avoid duplicating pre-indexed elements.',
-    importYamlSchema.shape,
-    handleImportYaml
+    'flowspec_import_json',
+    'Import JSON specification to create/merge nodes, edges, and screens. If the codebase has @flowspec annotations, incorporate them into the spec before importing to avoid duplicating pre-indexed elements.',
+    importJsonSchema.shape,
+    handleImportJson
   );
 
   server.tool(
@@ -223,7 +223,7 @@ export function createServer() {
     handleCloneProject
   );
 
-  console.error(`FlowSpec MCP v4.2.0 — mode: ${MODE}`);
+  console.error(`FlowSpec MCP v5.0.0 — mode: ${MODE}`);
 
   return server;
 }

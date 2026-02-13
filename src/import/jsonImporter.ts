@@ -1,5 +1,5 @@
 /**
- * Converts a validated YAML spec back into FlowSpec canvas nodes and edges.
+ * Converts a validated JSON spec back into FlowSpec canvas nodes and edges.
  * Ported from src/lib/import/yamlImporter.ts — uses MCP types, no @xyflow deps.
  * Lenient: uses sensible defaults for missing fields, skips broken edges.
  */
@@ -21,7 +21,7 @@ export interface ImportResult {
 	};
 }
 
-export function importFromYaml(spec: Record<string, unknown>): ImportResult {
+export function importFromJson(spec: Record<string, unknown>): ImportResult {
 	const metadata = (spec.metadata ?? {}) as Record<string, unknown>;
 	const projectName = (metadata.projectName as string) ?? 'Imported Project';
 

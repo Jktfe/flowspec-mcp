@@ -1,39 +1,38 @@
 import { z } from 'zod';
-import { parse as parseYaml } from 'yaml';
 import { getProject, updateProjectViaApi } from '../db.js';
-import { importFromYaml } from '../import/yamlImporter.js';
+import { importFromJson } from '../import/jsonImporter.js';
 import { computeAutoLayout } from '../layout/autoLayout.js';
 import type { CanvasNode, CanvasEdge } from '../types.js';
 
-export const importYamlSchema = z.object({
+export const importJsonSchema = z.object({
   projectId: z.string().describe('UUID of the target project'),
-  yaml: z.string().describe('YAML spec string (FlowSpec v1.2.0 format)'),
+  json: z.string().describe('JSON spec string (FlowSpec v1.2.0 format)'),
   autoLayout: z.boolean().optional().describe('Run dagre auto-layout after import (default: true)'),
   layoutDirection: z.enum(['TB', 'BT', 'LR', 'RL']).optional().describe('Layout direction (default: TB)'),
   merge: z.boolean().optional().describe('true = add to existing canvas, false = replace (default: false)'),
 });
 
-export async function handleImportYaml(args: z.infer<typeof importYamlSchema>) {
-  // Parse YAML string
+export async function handleImportJson(args: z.infer<typeof importJsonSchema>) {
+  // Parse JSON string
   let spec: Record<string, unknown>;
   try {
-    spec = parseYaml(args.yaml) as Record<string, unknown>;
+    spec = JSON.parse(args.json) as Record<string, unknown>;
   } catch (e) {
     return {
-      content: [{ type: 'text' as const, text: `YAML parse error: ${(e as Error).message}` }],
+      content: [{ type: 'text' as const, text: `JSON parse error: ${(e as Error).message}` }],
       isError: true,
     };
   }
 
   if (!spec || typeof spec !== 'object') {
     return {
-      content: [{ type: 'text' as const, text: 'Invalid YAML: expected an object at the top level' }],
+      content: [{ type: 'text' as const, text: 'Invalid JSON: expected an object at the top level' }],
       isError: true,
     };
   }
 
-  // Import YAML → nodes/edges/screens
-  const result = importFromYaml(spec);
+  // Import JSON → nodes/edges/screens
+  const result = importFromJson(spec);
 
   // Apply auto-layout if requested (default: true)
   const shouldLayout = args.autoLayout !== false;
@@ -86,7 +85,7 @@ export async function handleImportYaml(args: z.infer<typeof importYamlSchema>) {
 
   const { stats } = result;
   const lines = [
-    `Imported YAML into project **${updated.name}**`,
+    `Imported JSON into project **${updated.name}**`,
     '',
     `| Metric | Count |`,
     `|--------|-------|`,
