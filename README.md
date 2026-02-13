@@ -53,7 +53,7 @@ Local mode connects to the FlowSpec desktop server at `http://localhost:3456`.
 
 ### Read Tools
 - **`flowspec_list_projects`** — List all projects with names and dates
-- **`flowspec_get_yaml`** — Get full YAML spec for a project (optimised for Claude Code)
+- **`flowspec_get_json`** — Get full JSON spec for a project (optimised for Claude Code)
 - **`flowspec_get_project`** — Get raw canvas_state JSON
 - **`flowspec_search_nodes`** — Search nodes by label across all projects
 - **`flowspec_get_screen_context`** — Get screen/region/element structure
