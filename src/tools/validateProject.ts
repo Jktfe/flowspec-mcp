@@ -57,9 +57,15 @@ function validateDataPointSources(nodes: any[], edges: any[]): DataPointSourceIs
     const source = dp.data?.source ?? 'captured';
     const label = dp.data?.label ?? 'Untitled';
 
-    const incomingEdges = edges.filter((e) =>
-      e.target === dp.id && (e.data?.edgeType as string) !== 'contains'
-    );
+    // Include contains edges from screens (data flow), exclude from tables (structural)
+    const incomingEdges = edges.filter((e) => {
+      if (e.target !== dp.id) return false;
+      if ((e.data?.edgeType as string) === 'contains') {
+        const sourceNode = nodes.find((n: any) => n.id === e.source);
+        return sourceNode?.type !== 'table';
+      }
+      return true;
+    });
     const sourceNodeTypes = incomingEdges
       .map((e) => {
         const sourceNode = nodes.find((n) => n.id === e.source);
@@ -70,8 +76,7 @@ function validateDataPointSources(nodes: any[], edges: any[]): DataPointSourceIs
     let expectedTypes: string[] = [];
     switch (source) {
       case 'captured':
-        // Captured DPs are user input origins — no incoming source edge required
-        expectedTypes = [];
+        expectedTypes = ['screen', 'component'];
         break;
       case 'retrieved':
         expectedTypes = ['table', 'transform', 'component'];
