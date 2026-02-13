@@ -14,6 +14,7 @@ import { deleteNodeSchema, handleDeleteNode } from './tools/deleteNode.js';
 import { createEdgeSchema, handleCreateEdge } from './tools/createEdge.js';
 import { deleteEdgeSchema, handleDeleteEdge } from './tools/deleteEdge.js';
 import { analyseProjectSchema, handleAnalyseProject } from './tools/analyseProject.js';
+import { validateProjectSchema, handleValidateProject } from './tools/validateProject.js';
 // v3 write tools
 import { importYamlSchema, handleImportYaml } from './tools/importYaml.js';
 import { autoLayoutSchema, handleAutoLayout } from './tools/autoLayout.js';
@@ -134,6 +135,13 @@ export function createServer() {
     'Run orphan node and duplicate label analysis on a project',
     analyseProjectSchema.shape,
     handleAnalyseProject
+  );
+
+  server.tool(
+    'flowspec_validate_project',
+    'Validate data flow semantics: DataPoint sources, Transform I/O, Component references, type matching, and circular dependencies',
+    validateProjectSchema.shape,
+    handleValidateProject
   );
 
   // ─── Write tools (v3) ────────────────────────────────────────────
