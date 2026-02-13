@@ -18,10 +18,11 @@ export interface ImportResult {
 		edges: number;
 		skippedEdges: number;
 		skippedNodes: number;
+		skipReasons: string[];
 	};
 }
 
-export function importFromJson(spec: Record<string, unknown>): ImportResult {
+export function importFromJson(spec: Record<string, unknown>, existingNodeIds?: Set<string>): ImportResult {
 	const metadata = (spec.metadata ?? {}) as Record<string, unknown>;
 	const projectName = (metadata.projectName as string) ?? 'Imported Project';
 
@@ -30,6 +31,17 @@ export function importFromJson(spec: Record<string, unknown>): ImportResult {
 	const rawTransforms = (spec.transforms as Record<string, unknown>[]) ?? [];
 	const rawDataFlow = (spec.dataFlow as Record<string, unknown>[]) ?? [];
 	const rawTables = (spec.tables as Record<string, unknown>[]) ?? [];
+
+	// Detect unknown top-level keys when all expected arrays are empty
+	const KNOWN_KEYS = new Set(['version', 'metadata', 'dataPoints', 'components', 'transforms', 'tables', 'dataFlow', 'screens']);
+	const unknownKeys = Object.keys(spec).filter(k => !KNOWN_KEYS.has(k));
+	const allEmpty = rawDataPoints.length === 0 && rawComponents.length === 0 &&
+		rawTransforms.length === 0 && rawTables.length === 0 && rawDataFlow.length === 0;
+	if (allEmpty && unknownKeys.length > 0) {
+		const suggestions = unknownKeys.map(k => `"${k}"`).join(', ');
+		const expected = '"dataPoints", "transforms", "components", "tables", "dataFlow", "screens"';
+		throw new Error(`Unknown key ${suggestions} — expected ${expected}. Check your JSON spec structure.`);
+	}
 
 	const nodes: CanvasNode[] = [];
 	const seenIds = new Set<string>();
@@ -88,15 +100,20 @@ export function importFromJson(spec: Record<string, unknown>): ImportResult {
 		}
 		seenIds.add(id);
 
+		const label = (tx.label as string) ?? '';
 		const description = (tx.description as string) ?? '';
-		const rawLogic = (tx.logic ?? {}) as Record<string, unknown>;
+		const logicInput = tx.logic;
+		const rawLogic: Record<string, unknown> =
+			typeof logicInput === 'string'
+				? { type: tx.type ?? 'formula', content: logicInput }
+				: (logicInput ?? {}) as Record<string, unknown>;
 
 		nodes.push({
 			id,
 			type: 'transform',
 			position: { x: 0, y: 0 },
 			data: {
-				label: description || 'Untitled Transform',
+				label: label || description || 'Untitled Transform',
 				type: validLogicType(tx.type as string),
 				description,
 				inputs: Array.isArray(tx.inputs) ? (tx.inputs as string[]) : [],
@@ -140,13 +157,23 @@ export function importFromJson(spec: Record<string, unknown>): ImportResult {
 	// --- Edges (no markerEnd — visual-only, not needed in canvas_state) ---
 	const edges: CanvasEdge[] = [];
 	let skippedEdges = 0;
+	const skipReasons: string[] = [];
+	const allKnownIds = existingNodeIds
+		? new Set([...seenIds, ...existingNodeIds])
+		: seenIds;
 
 	for (const flow of rawDataFlow) {
 		const from = flow.from as string | undefined;
 		const to = flow.to as string | undefined;
 
-		if (!from || !to || !seenIds.has(from) || !seenIds.has(to)) {
+		if (!from || !to) {
 			skippedEdges++;
+			skipReasons.push(`Edge ${from ?? '?'} → ${to ?? '?'}: missing from/to field`);
+			continue;
+		}
+		if (!allKnownIds.has(from) || !allKnownIds.has(to)) {
+			skippedEdges++;
+			skipReasons.push(`Edge ${from} → ${to}: source/target node not found`);
 			continue;
 		}
 
@@ -234,7 +261,8 @@ export function importFromJson(spec: Record<string, unknown>): ImportResult {
 			tables: nodes.filter((n) => n.type === 'table').length,
 			edges: edges.length,
 			skippedEdges,
-			skippedNodes
+			skippedNodes,
+			skipReasons
 		}
 	};
 }
@@ -246,7 +274,7 @@ function validDataType(t: string | undefined): DataType {
 	return t && VALID_DATA_TYPES.has(t) ? (t as DataType) : 'string';
 }
 
-const VALID_SOURCES: Set<string> = new Set(['captured', 'inferred']);
+const VALID_SOURCES: Set<string> = new Set(['captured', 'retrieved', 'inferred']);
 function validSource(s: string | undefined): SourceType {
 	return s && VALID_SOURCES.has(s) ? (s as SourceType) : 'captured';
 }

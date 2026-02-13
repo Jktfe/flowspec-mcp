@@ -57,7 +57,9 @@ function validateDataPointSources(nodes: any[], edges: any[]): DataPointSourceIs
     const source = dp.data?.source ?? 'captured';
     const label = dp.data?.label ?? 'Untitled';
 
-    const incomingEdges = edges.filter((e) => e.target === dp.id);
+    const incomingEdges = edges.filter((e) =>
+      e.target === dp.id && (e.data?.edgeType as string) !== 'contains'
+    );
     const sourceNodeTypes = incomingEdges
       .map((e) => {
         const sourceNode = nodes.find((n) => n.id === e.source);
@@ -68,7 +70,8 @@ function validateDataPointSources(nodes: any[], edges: any[]): DataPointSourceIs
     let expectedTypes: string[] = [];
     switch (source) {
       case 'captured':
-        expectedTypes = ['screen', 'component'];
+        // Captured DPs are user input origins — no incoming source edge required
+        expectedTypes = [];
         break;
       case 'retrieved':
         expectedTypes = ['table', 'transform', 'component'];
@@ -126,8 +129,12 @@ function validateTransforms(nodes: any[], edges: any[]): TransformIssue[] {
     const label = transform.data?.label ?? 'Untitled';
     const transformType = transform.data?.type ?? 'formula';
 
-    const incomingEdges = edges.filter((e) => e.target === transform.id);
-    const outgoingEdges = edges.filter((e) => e.source === transform.id);
+    const incomingEdges = edges.filter((e) =>
+      e.target === transform.id && (e.data?.edgeType as string) !== 'contains'
+    );
+    const outgoingEdges = edges.filter((e) =>
+      e.source === transform.id && (e.data?.edgeType as string) !== 'contains'
+    );
 
     if (incomingEdges.length === 0) {
       issues.push({
@@ -155,13 +162,16 @@ function validateComponentReferences(nodes: any[]): ComponentReferenceIssue[] {
   const issues: ComponentReferenceIssue[] = [];
   const components = nodes.filter((n) => n.type === 'component');
   const nodeIdSet = new Set(nodes.map((n) => n.id));
+  const nodeLabelSet = new Set(nodes.map((n) => n.data?.label as string).filter(Boolean));
 
   for (const component of components) {
     const label = component.data?.label ?? 'Untitled';
     const captures = component.data?.captures ?? [];
     const displays = component.data?.displays ?? [];
 
-    const invalidCaptures = captures.filter((id: string) => !nodeIdSet.has(id));
+    const invalidCaptures = captures.filter((ref: string) =>
+      !nodeIdSet.has(ref) && !nodeLabelSet.has(ref)
+    );
     if (invalidCaptures.length > 0) {
       issues.push({
         violation: 'invalid-capture-reference',
@@ -171,7 +181,9 @@ function validateComponentReferences(nodes: any[]): ComponentReferenceIssue[] {
       });
     }
 
-    const invalidDisplays = displays.filter((id: string) => !nodeIdSet.has(id));
+    const invalidDisplays = displays.filter((ref: string) =>
+      !nodeIdSet.has(ref) && !nodeLabelSet.has(ref)
+    );
     if (invalidDisplays.length > 0) {
       issues.push({
         violation: 'invalid-display-reference',
@@ -208,7 +220,8 @@ function validateTableDataPointTypes(nodes: any[], edges: any[]): TableDataPoint
         (col: any) => col.name.toLowerCase().trim() === dpLabel
       );
 
-      if (matchingColumn && matchingColumn.type !== dp.data?.type) {
+      if (matchingColumn && matchingColumn.type !== dp.data?.type
+          && dp.data?.type !== 'tbd' && matchingColumn.type !== 'tbd') {
         issues.push({
           violation: 'type-mismatch',
           dataPointId: dp.id,

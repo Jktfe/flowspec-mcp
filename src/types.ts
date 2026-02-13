@@ -1,7 +1,7 @@
 // Minimal types for FlowSpec MCP server — no @xyflow/svelte dependency
 
 export type DataType = 'string' | 'number' | 'boolean' | 'object' | 'array';
-export type SourceType = 'captured' | 'inferred';
+export type SourceType = 'captured' | 'retrieved' | 'inferred';
 export type LogicType = 'formula' | 'validation' | 'workflow';
 export type TableSourceType = 'database' | 'api' | 'file' | 'manual';
 export type EdgeType = 'flows-to' | 'derives-from' | 'transforms' | 'validates' | 'contains';

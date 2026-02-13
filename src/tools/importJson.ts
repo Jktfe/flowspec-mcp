@@ -32,7 +32,26 @@ export async function handleImportJson(args: z.infer<typeof importJsonSchema>) {
   }
 
   // Import JSON → nodes/edges/screens
-  const result = importFromJson(spec);
+  // In merge mode, pass existing node IDs so edges referencing them aren't skipped
+  let existingNodeIds: Set<string> | undefined;
+  if (args.merge) {
+    const existingProject = await getProject(args.projectId);
+    if (existingProject) {
+      existingNodeIds = new Set(
+        (existingProject.canvas_state?.nodes ?? []).map((n: CanvasNode) => n.id)
+      );
+    }
+  }
+
+  let result;
+  try {
+    result = importFromJson(spec, existingNodeIds);
+  } catch (e) {
+    return {
+      content: [{ type: 'text' as const, text: `Import error: ${(e as Error).message}` }],
+      isError: true,
+    };
+  }
 
   // Apply auto-layout if requested (default: true)
   const shouldLayout = args.autoLayout !== false;
@@ -97,10 +116,24 @@ export async function handleImportJson(args: z.infer<typeof importJsonSchema>) {
     `| Screens | ${result.screens.length} |`,
     `| Skipped nodes | ${stats.skippedNodes} |`,
     `| Skipped edges | ${stats.skippedEdges} |`,
+  ];
+
+  if (stats.skipReasons.length > 0) {
+    lines.push('');
+    lines.push('**Skipped edge details:**');
+    for (const reason of stats.skipReasons.slice(0, 20)) {
+      lines.push(`- ${reason}`);
+    }
+    if (stats.skipReasons.length > 20) {
+      lines.push(`- ... and ${stats.skipReasons.length - 20} more`);
+    }
+  }
+
+  lines.push(
     '',
     `Mode: ${args.merge ? 'merge (added to existing)' : 'replace'}`,
     shouldLayout ? `Layout: ${args.layoutDirection ?? 'TB'}` : 'Layout: skipped',
-  ];
+  );
 
   return {
     content: [{ type: 'text' as const, text: lines.join('\n') }],

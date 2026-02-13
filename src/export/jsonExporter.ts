@@ -21,7 +21,7 @@ interface ExportDataPoint {
   id: string;
   label: string;
   type: string;
-  source: 'captured' | 'inferred';
+  source: 'captured' | 'retrieved' | 'inferred';
   sourceDefinition: string;
   constraints: string[];
   locations: Array<{ component: string; role: 'input' | 'output' }>;
@@ -163,9 +163,7 @@ export function exportToJson(
         logic: data.logic,
       };
     }),
-    dataFlow: edges.filter((e) => {
-      return (e.data?.edgeType as string) !== 'contains';
-    }).map((edge) => {
+    dataFlow: edges.map((edge) => {
       const result: ExportDataFlow = {
         from: edge.source,
         to: edge.target,
