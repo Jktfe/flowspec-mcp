@@ -40,6 +40,8 @@ interface EdgeRow {
   source: string;
   target: string;
   type: string;
+  source_handle: string | null;
+  target_handle: string | null;
   data: Record<string, unknown>;
 }
 
@@ -93,6 +95,8 @@ function buildCanvasState(
     source: e.source,
     target: e.target,
     type: e.type,
+    ...(e.source_handle ? { sourceHandle: e.source_handle } : {}),
+    ...(e.target_handle ? { targetHandle: e.target_handle } : {}),
     data: e.data
   }));
 
@@ -146,7 +150,7 @@ async function getProjectFromNormalized(projectId: string): Promise<Project | nu
 
   const [nodesRaw, edgesRaw, screensRaw, regionsRaw, regionElementsRaw] = await Promise.all([
     sql!`SELECT id, project_id, type, position_x, position_y, label, data FROM nodes WHERE project_id = ${projectId}`,
-    sql!`SELECT id, project_id, source, target, type, data FROM edges WHERE project_id = ${projectId}`,
+    sql!`SELECT id, project_id, source, target, type, source_handle, target_handle, data FROM edges WHERE project_id = ${projectId}`,
     sql!`SELECT id, project_id, name, image_url, local_image_path, image_filename, image_width, image_height FROM screens WHERE project_id = ${projectId}`,
     sql!`SELECT id, screen_id, project_id, label, position_x, position_y, size_width, size_height, component_node_id FROM screen_regions WHERE project_id = ${projectId}`,
     sql!`
@@ -516,7 +520,7 @@ export async function deleteNodeViaApi(projectId: string, nodeId: string): Promi
 
 export async function createEdgeViaApi(
   projectId: string,
-  edge: { source: string; target: string; type?: string; data?: Record<string, unknown> }
+  edge: { source: string; target: string; type?: string; sourceHandle?: string | null; targetHandle?: string | null; data?: Record<string, unknown> }
 ): Promise<{ id: string; source: string; target: string; type: string; data: Record<string, unknown> } | null> {
   if (MODE === 'local') {
     const res = await fetchLocal(`/api/projects/${projectId}/edges`, {
@@ -532,12 +536,12 @@ export async function createEdgeViaApi(
   if (check.length === 0) return null;
 
   const edgeId = randomUUID();
-  const edgeType = edge.data?.edgeType as string ?? edge.type ?? 'flows-to';
+  const edgeType = 'flows-to'; // All edges are flows-to
   const data = edge.data ?? {};
 
   await sql!`
-    INSERT INTO edges (id, project_id, source, target, type, data, created_at, updated_at)
-    VALUES (${edgeId}, ${projectId}, ${edge.source}, ${edge.target}, ${edgeType}, ${JSON.stringify(data)}::jsonb, NOW(), NOW())
+    INSERT INTO edges (id, project_id, source, target, type, source_handle, target_handle, data, created_at, updated_at)
+    VALUES (${edgeId}, ${projectId}, ${edge.source}, ${edge.target}, ${edgeType}, ${edge.sourceHandle ?? null}, ${edge.targetHandle ?? null}, ${JSON.stringify(data)}::jsonb, NOW(), NOW())
   `;
 
   return { id: edgeId, source: edge.source, target: edge.target, type: edgeType, data };
@@ -802,6 +806,7 @@ export async function updateEdgeViaApi(
     label: string;
     sourceHandle: string | null;
     targetHandle: string | null;
+    data: Record<string, unknown>;
   }>
 ): Promise<{ id: string } | null> {
   if (MODE === 'local') {
@@ -813,19 +818,25 @@ export async function updateEdgeViaApi(
     return res.json();
   }
 
-  // Verify edge exists
+  // Verify edge exists and fetch current state
   const edgeRows = await sql!`
-    SELECT id, data FROM edges WHERE id = ${edgeId} AND project_id = ${projectId}
+    SELECT id, data, source_handle, target_handle FROM edges WHERE id = ${edgeId} AND project_id = ${projectId}
   `;
   if (edgeRows.length === 0) return null;
 
   const existingData = (edgeRows[0].data ?? {}) as Record<string, unknown>;
   const newData = { ...existingData };
   if (updates.label !== undefined) newData.label = updates.label;
+  if (updates.data) Object.assign(newData, updates.data);
+
+  const newSourceHandle = updates.sourceHandle !== undefined ? updates.sourceHandle : (edgeRows[0].source_handle ?? null);
+  const newTargetHandle = updates.targetHandle !== undefined ? updates.targetHandle : (edgeRows[0].target_handle ?? null);
 
   await sql!`
     UPDATE edges
     SET type = COALESCE(${updates.type ?? null}, type),
+        source_handle = ${newSourceHandle},
+        target_handle = ${newTargetHandle},
         data = ${JSON.stringify(newData)}::jsonb,
         updated_at = NOW()
     WHERE id = ${edgeId} AND project_id = ${projectId}

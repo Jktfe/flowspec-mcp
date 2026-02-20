@@ -4,7 +4,7 @@ export type DataType = 'string' | 'number' | 'boolean' | 'object' | 'array';
 export type SourceType = 'captured' | 'retrieved' | 'inferred';
 export type LogicType = 'formula' | 'validation' | 'workflow';
 export type TableSourceType = 'database' | 'api' | 'file' | 'manual';
-export type EdgeType = 'flows-to' | 'derives-from' | 'transforms' | 'validates' | 'contains';
+export type EdgeType = 'flows-to';
 
 export interface DataPointData {
   label: string;
@@ -72,6 +72,8 @@ export interface CanvasEdge {
   source: string;
   target: string;
   type?: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
   data?: Record<string, unknown>;
 }
 

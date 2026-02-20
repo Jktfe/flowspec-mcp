@@ -5,8 +5,10 @@ export const createEdgeSchema = z.object({
   projectId: z.string().describe('UUID of the project'),
   source: z.string().describe('Source node ID'),
   target: z.string().describe('Target node ID'),
-  type: z.enum(['flows-to', 'derives-from', 'transforms', 'validates', 'contains']).optional()
-    .describe('Edge type (defaults to flows-to)'),
+  sourceHandle: z.enum(['source-left', 'source-top', 'source-right', 'source-bottom']).nullable().optional()
+    .describe('Source connection handle (null = auto-route)'),
+  targetHandle: z.enum(['target-left', 'target-top', 'target-right', 'target-bottom']).nullable().optional()
+    .describe('Target connection handle (null = auto-route)'),
   data: z.record(z.unknown()).optional().describe('Optional edge data'),
 });
 
@@ -14,8 +16,10 @@ export async function handleCreateEdge(args: z.infer<typeof createEdgeSchema>) {
   const edge = await createEdgeViaApi(args.projectId, {
     source: args.source,
     target: args.target,
-    type: args.type ? `typed` : 'typed',
-    data: { edgeType: args.type ?? 'flows-to', ...(args.data ?? {}) },
+    type: 'typed',
+    sourceHandle: args.sourceHandle ?? null,
+    targetHandle: args.targetHandle ?? null,
+    data: { edgeType: 'flows-to', ...(args.data ?? {}) },
   });
 
   if (!edge) {
@@ -28,7 +32,7 @@ export async function handleCreateEdge(args: z.infer<typeof createEdgeSchema>) {
   return {
     content: [{
       type: 'text' as const,
-      text: `Created edge ${args.source} → ${args.target} (type: ${args.type ?? 'flows-to'}, id: ${edge.id})`,
+      text: `Created edge ${args.source} → ${args.target} (type: flows-to, id: ${edge.id})`,
     }],
   };
 }

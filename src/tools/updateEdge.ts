@@ -4,8 +4,8 @@ import { updateEdgeViaApi } from '../db.js';
 export const updateEdgeSchema = z.object({
   projectId: z.string().describe('UUID of the project'),
   edgeId: z.string().describe('UUID of the edge to update'),
-  type: z.enum(['flows-to', 'derives-from', 'transforms', 'validates', 'contains']).optional()
-    .describe('New edge type'),
+  type: z.enum(['flows-to']).optional()
+    .describe('Edge type (always flows-to)'),
   label: z.string().optional().describe('Edge label text'),
   sourceHandle: z.enum(['source-left', 'source-top', 'source-right', 'source-bottom']).nullable().optional()
     .describe('Source connection handle (null = auto-route)'),
