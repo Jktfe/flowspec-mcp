@@ -21,6 +21,13 @@ export interface ComponentData {
   captures: string[];
 }
 
+// Workflow member: a named step inside a workflow transform
+export interface WorkflowMember {
+  name: string;
+  transformId?: string;     // optional ref to an existing transform node
+  logicType?: LogicType;    // hint for display when unlinked
+}
+
 export interface TransformData {
   label: string;
   type: LogicType;
@@ -31,6 +38,7 @@ export interface TransformData {
     type: 'formula' | 'decision_table' | 'steps';
     content: string | Record<string, unknown>;
   };
+  members?: WorkflowMember[];  // only when type === 'workflow'
 }
 
 export interface TableData {

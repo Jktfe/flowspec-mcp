@@ -8,6 +8,7 @@ import type {
   TableSourceType,
   EdgeType,
   Screen,
+  WorkflowMember,
 } from '../types.js';
 
 interface ExportMetadata {
@@ -35,6 +36,12 @@ interface ExportComponent {
   captures: string[];
 }
 
+interface ExportWorkflowMember {
+  name: string;
+  transformId?: string;
+  logicType?: string;
+}
+
 interface ExportTransform {
   id: string;
   type: string;
@@ -45,6 +52,7 @@ interface ExportTransform {
     type: string;
     content: string | Record<string, unknown>;
   };
+  members?: ExportWorkflowMember[];
 }
 
 interface ExportTable {
@@ -154,7 +162,7 @@ export function exportToJson(
     }),
     transforms: transformNodes.map((node) => {
       const data = node.data as unknown as TransformData;
-      return {
+      const result: ExportTransform = {
         id: node.id,
         type: data.type,
         description: data.description,
@@ -162,6 +170,15 @@ export function exportToJson(
         outputs: data.outputs,
         logic: data.logic,
       };
+      if (data.type === 'workflow' && data.members && data.members.length > 0) {
+        result.members = data.members.map((m: WorkflowMember) => {
+          const member: ExportWorkflowMember = { name: m.name };
+          if (m.transformId) member.transformId = m.transformId;
+          if (m.logicType) member.logicType = m.logicType;
+          return member;
+        });
+      }
+      return result;
     }),
     dataFlow: edges.map((edge) => {
       const result: ExportDataFlow = {
