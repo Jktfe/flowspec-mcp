@@ -34,13 +34,17 @@ import { deleteDecisionTreeSchema, handleDeleteDecisionTree } from './tools/dele
 import { analyseDecisionTreeSchema, handleAnalyseDecisionTree } from './tools/analyseDecisionTree.js';
 import { MODE } from './config.js';
 
+// FLOWSPEC_TOOLS=core  → 11 essential tools only (~2,900 tokens)
+// FLOWSPEC_TOOLS=all   → all 30 tools (~7,980 tokens)  [default]
+const TOOLS_MODE = (process.env.FLOWSPEC_TOOLS ?? 'all') as 'core' | 'all';
+
 export function createServer() {
   const server = new McpServer({
     name: 'flowspec',
     version: '5.0.0',
   });
 
-  // ─── Read tools ──────────────────────────────────────────────────
+  // ─── Core tools (always registered) ─────────────────────────────
 
   server.tool(
     'flowspec_list_projects',
@@ -77,27 +81,11 @@ export function createServer() {
     handleGetScreenContext
   );
 
-  // ─── Write tools (v2) ────────────────────────────────────────────
-
   server.tool(
     'flowspec_create_project',
     'Create a new FlowSpec project. Before building from a codebase, scan source files for @flowspec annotations (left by the codebase-indexer skill) to avoid re-discovering already-indexed elements.',
     createProjectSchema.shape,
     handleCreateProject
-  );
-
-  server.tool(
-    'flowspec_update_project',
-    'Update a project name or replace its entire canvas state',
-    updateProjectSchema.shape,
-    handleUpdateProject
-  );
-
-  server.tool(
-    'flowspec_delete_project',
-    'Delete a FlowSpec project',
-    deleteProjectSchema.shape,
-    handleDeleteProject
   );
 
   server.tool(
@@ -115,24 +103,10 @@ export function createServer() {
   );
 
   server.tool(
-    'flowspec_delete_node',
-    'Remove a node and all its connected edges from a project',
-    deleteNodeSchema.shape,
-    handleDeleteNode
-  );
-
-  server.tool(
     'flowspec_create_edge',
     'Connect two nodes with an edge type (flows-to, derives-from, transforms, validates, contains)',
     createEdgeSchema.shape,
     handleCreateEdge
-  );
-
-  server.tool(
-    'flowspec_delete_edge',
-    'Remove an edge from a project',
-    deleteEdgeSchema.shape,
-    handleDeleteEdge
   );
 
   server.tool(
@@ -149,116 +123,148 @@ export function createServer() {
     handleValidateProject
   );
 
-  // ─── Write tools (v3) ────────────────────────────────────────────
+  if (TOOLS_MODE === 'all') {
+    // ─── Extras: v2 destructive/update tools ───────────────────────
 
-  server.tool(
-    'flowspec_import_json',
-    'Import JSON specification to create/merge nodes, edges, and screens. If the codebase has @flowspec annotations, incorporate them into the spec before importing to avoid duplicating pre-indexed elements.',
-    importJsonSchema.shape,
-    handleImportJson
-  );
+    server.tool(
+      'flowspec_update_project',
+      'Update a project name or replace its entire canvas state',
+      updateProjectSchema.shape,
+      handleUpdateProject
+    );
 
-  server.tool(
-    'flowspec_auto_layout',
-    'Apply automatic hierarchical layout (Dagre) to organize nodes',
-    autoLayoutSchema.shape,
-    handleAutoLayout
-  );
+    server.tool(
+      'flowspec_delete_project',
+      'Delete a FlowSpec project',
+      deleteProjectSchema.shape,
+      handleDeleteProject
+    );
 
-  server.tool(
-    'flowspec_upload_image',
-    'Upload an image and get its URL with auto-detected dimensions',
-    uploadImageSchema.shape,
-    handleUploadImage
-  );
+    server.tool(
+      'flowspec_delete_node',
+      'Remove a node and all its connected edges from a project',
+      deleteNodeSchema.shape,
+      handleDeleteNode
+    );
 
-  server.tool(
-    'flowspec_create_screen',
-    'Create a new wireframe screen with optional image',
-    createScreenSchema.shape,
-    handleCreateScreen
-  );
+    server.tool(
+      'flowspec_delete_edge',
+      'Remove an edge from a project',
+      deleteEdgeSchema.shape,
+      handleDeleteEdge
+    );
 
-  server.tool(
-    'flowspec_update_screen',
-    'Update screen properties (name, image)',
-    updateScreenSchema.shape,
-    handleUpdateScreen
-  );
+    // ─── Extras: v3 bulk/screen/region tools ───────────────────────
 
-  server.tool(
-    'flowspec_delete_screen',
-    'Delete a wireframe screen and all its regions',
-    deleteScreenSchema.shape,
-    handleDeleteScreen
-  );
+    server.tool(
+      'flowspec_import_json',
+      'Import JSON specification to create/merge nodes, edges, and screens. If the codebase has @flowspec annotations, incorporate them into the spec before importing to avoid duplicating pre-indexed elements.',
+      importJsonSchema.shape,
+      handleImportJson
+    );
 
-  server.tool(
-    'flowspec_add_region',
-    'Add a region to a screen with % coordinates and element IDs',
-    addRegionSchema.shape,
-    handleAddRegion
-  );
+    server.tool(
+      'flowspec_auto_layout',
+      'Apply automatic hierarchical layout (Dagre) to organize nodes',
+      autoLayoutSchema.shape,
+      handleAutoLayout
+    );
 
-  server.tool(
-    'flowspec_update_region',
-    'Update region position, size, label, or element IDs',
-    updateRegionSchema.shape,
-    handleUpdateRegion
-  );
+    server.tool(
+      'flowspec_upload_image',
+      'Upload an image and get its URL with auto-detected dimensions',
+      uploadImageSchema.shape,
+      handleUploadImage
+    );
 
-  server.tool(
-    'flowspec_remove_region',
-    'Remove a region from a screen',
-    removeRegionSchema.shape,
-    handleRemoveRegion
-  );
+    server.tool(
+      'flowspec_create_screen',
+      'Create a new wireframe screen with optional image',
+      createScreenSchema.shape,
+      handleCreateScreen
+    );
 
-  server.tool(
-    'flowspec_update_edge',
-    'Update edge type, label, or handle positions',
-    updateEdgeSchema.shape,
-    handleUpdateEdge
-  );
+    server.tool(
+      'flowspec_update_screen',
+      'Update screen properties (name, image)',
+      updateScreenSchema.shape,
+      handleUpdateScreen
+    );
 
-  server.tool(
-    'flowspec_clone_project',
-    'Clone a project for backup or branching',
-    cloneProjectSchema.shape,
-    handleCloneProject
-  );
+    server.tool(
+      'flowspec_delete_screen',
+      'Delete a wireframe screen and all its regions',
+      deleteScreenSchema.shape,
+      handleDeleteScreen
+    );
 
-  // ─── Decision tree tools (v4) ───────────────────────────────────
+    server.tool(
+      'flowspec_add_region',
+      'Add a region to a screen with % coordinates and element IDs',
+      addRegionSchema.shape,
+      handleAddRegion
+    );
 
-  server.tool(
-    'flowspec_list_decision_trees',
-    'List all decision trees for a project',
-    listDecisionTreesSchema.shape,
-    handleListDecisionTrees
-  );
+    server.tool(
+      'flowspec_update_region',
+      'Update region position, size, label, or element IDs',
+      updateRegionSchema.shape,
+      handleUpdateRegion
+    );
 
-  server.tool(
-    'flowspec_get_decision_tree',
-    'Get a decision tree with full node/edge structure',
-    getDecisionTreeSchema.shape,
-    handleGetDecisionTree
-  );
+    server.tool(
+      'flowspec_remove_region',
+      'Remove a region from a screen',
+      removeRegionSchema.shape,
+      handleRemoveRegion
+    );
 
-  server.tool(
-    'flowspec_delete_decision_tree',
-    'Delete a decision tree from a project',
-    deleteDecisionTreeSchema.shape,
-    handleDeleteDecisionTree
-  );
+    server.tool(
+      'flowspec_update_edge',
+      'Update edge type, label, or handle positions',
+      updateEdgeSchema.shape,
+      handleUpdateEdge
+    );
 
-  server.tool(
-    'flowspec_analyse_decision_tree',
-    'Analyse a decision tree: depth, orphans, outcomes, under-branched decisions',
-    analyseDecisionTreeSchema.shape,
-    handleAnalyseDecisionTree
-  );
+    server.tool(
+      'flowspec_clone_project',
+      'Clone a project for backup or branching',
+      cloneProjectSchema.shape,
+      handleCloneProject
+    );
 
-  console.error(`FlowSpec MCP v5.4.0 — mode: ${MODE}`);
+    // ─── Extras: v4 decision tree tools ────────────────────────────
+
+    server.tool(
+      'flowspec_list_decision_trees',
+      'List all decision trees for a project',
+      listDecisionTreesSchema.shape,
+      handleListDecisionTrees
+    );
+
+    server.tool(
+      'flowspec_get_decision_tree',
+      'Get a decision tree with full node/edge structure',
+      getDecisionTreeSchema.shape,
+      handleGetDecisionTree
+    );
+
+    server.tool(
+      'flowspec_delete_decision_tree',
+      'Delete a decision tree from a project',
+      deleteDecisionTreeSchema.shape,
+      handleDeleteDecisionTree
+    );
+
+    server.tool(
+      'flowspec_analyse_decision_tree',
+      'Analyse a decision tree: depth, orphans, outcomes, under-branched decisions',
+      analyseDecisionTreeSchema.shape,
+      handleAnalyseDecisionTree
+    );
+  }
+
+  console.error(`FlowSpec MCP v5.4.0 — mode: ${MODE}, tools: ${TOOLS_MODE} (${TOOLS_MODE === 'core' ? 11 : 30})`);
 
   return server;
 }
