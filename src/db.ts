@@ -87,7 +87,7 @@ function buildCanvasState(
     id: n.id,
     type: n.type,
     position: { x: n.position_x, y: n.position_y },
-    data: { ...n.data, label: n.label ?? n.data.label }
+    data: { ...(n.data ?? {}), label: n.label ?? (n.data?.label as string | null) ?? null }
   }));
 
   const canvasEdges: CanvasEdge[] = edges.map(e => ({
@@ -180,6 +180,20 @@ async function getProjectFromNormalized(projectId: string): Promise<Project | nu
     created_at: meta.created_at as string,
     updated_at: meta.updated_at as string
   };
+}
+
+// ─── Helper: sanitize canvas state to ensure table nodes always have columns ──
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sanitiseCanvasState(cs: any): any {
+  if (!cs || typeof cs !== 'object') return cs;
+  const nodes = Array.isArray(cs.nodes) ? cs.nodes.map((n: any) => {
+    if (n?.type === 'table' && n.data) {
+      return { ...n, data: { ...n.data, columns: Array.isArray(n.data.columns) ? n.data.columns : [] } };
+    }
+    return n;
+  }) : cs.nodes;
+  return { ...cs, nodes };
 }
 
 // ─── Local mode (HTTP to desktop server) ───────────────────────────
@@ -287,7 +301,7 @@ export async function createProjectViaApi(name: string, canvasState?: unknown): 
   if (MODE === 'local') {
     const res = await fetchLocal('/api/projects', {
       method: 'POST',
-      body: JSON.stringify({ name, canvas_state: canvasState ?? { nodes: [], edges: [] } }),
+      body: JSON.stringify({ name, canvas_state: sanitiseCanvasState(canvasState ?? { nodes: [], edges: [] }) }),
     });
     if (!res.ok) throw new Error(`Failed to create project: ${res.status}`);
     return res.json();
@@ -329,9 +343,12 @@ export async function createProjectViaApi(name: string, canvasState?: unknown): 
 
 export async function updateProjectViaApi(projectId: string, updates: { name?: string; canvas_state?: unknown }): Promise<Project | null> {
   if (MODE === 'local') {
+    const sanitised = updates.canvas_state
+      ? { ...updates, canvas_state: sanitiseCanvasState(updates.canvas_state) }
+      : updates;
     const res = await fetchLocal(`/api/projects/${projectId}`, {
       method: 'PUT',
-      body: JSON.stringify(updates),
+      body: JSON.stringify(sanitised),
     });
     if (!res.ok) return null;
     return res.json();
