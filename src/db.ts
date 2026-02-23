@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { neon } from '@neondatabase/serverless';
-import type { Project, CanvasNode, CanvasEdge, Screen, ScreenRegion } from './types.js';
+import type { Project, CanvasNode, CanvasEdge, Screen, ScreenRegion, DecisionTreeSummary, DecisionTreeFull } from './types.js';
 import { MODE, LOCAL_API_BASE, getLocalAuthToken } from './config.js';
 
 // ─── Cloud mode (direct Neon SQL) ──────────────────────────────────
@@ -927,4 +927,57 @@ export async function bulkImportCanvasState(
     edgeCount: canvasState.edges.length,
     screenCount: canvasState.screens?.length ?? 0,
   };
+}
+
+// ─── Decision Tree operations ───────────────────────────────────────
+
+export async function listDecisionTrees(projectId: string): Promise<DecisionTreeSummary[]> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/decision-trees`);
+    if (!res.ok) return [];
+    return res.json();
+  }
+
+  const rows = await sql!`
+    SELECT id, name, description, generated_from_node_id, generated_from_node_label,
+           trace_depth, created_at, updated_at
+    FROM decision_trees
+    WHERE project_id = ${projectId}
+    ORDER BY updated_at DESC
+  `;
+  return rows as unknown as DecisionTreeSummary[];
+}
+
+export async function getDecisionTree(projectId: string, treeId: string): Promise<DecisionTreeFull | null> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/decision-trees/${treeId}`);
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  const rows = await sql!`
+    SELECT id, name, description, tree_data, generated_from_node_id, generated_from_node_label,
+           trace_depth, created_at, updated_at
+    FROM decision_trees
+    WHERE id = ${treeId} AND project_id = ${projectId}
+  `;
+  if (rows.length === 0) return null;
+  const row = rows[0];
+  return {
+    ...row,
+    tree_data: typeof row.tree_data === 'string' ? JSON.parse(row.tree_data as string) : row.tree_data,
+  } as unknown as DecisionTreeFull;
+}
+
+export async function deleteDecisionTreeViaApi(projectId: string, treeId: string): Promise<boolean> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/decision-trees/${treeId}`, { method: 'DELETE' });
+    return res.ok;
+  }
+
+  const rows = await sql!`
+    DELETE FROM decision_trees WHERE id = ${treeId} AND project_id = ${projectId}
+    RETURNING id
+  `;
+  return rows.length > 0;
 }

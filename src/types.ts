@@ -85,6 +85,40 @@ export interface CanvasEdge {
   data?: Record<string, unknown>;
 }
 
+// Decision Tree types
+export interface DecisionTreeSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  generated_from_node_id: string | null;
+  generated_from_node_label: string | null;
+  trace_depth: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DecisionTreeFull extends DecisionTreeSummary {
+  tree_data: {
+    nodes: Array<{
+      id: string;
+      type: 'decision' | 'outcome' | 'action' | 'start';
+      label: string;
+      description?: string;
+      condition?: { field: string; operator: string; value?: string };
+      outcome?: { result: string; confidence?: number };
+      sourceNodeId?: string;
+    }>;
+    edges: Array<{
+      id: string;
+      source: string;
+      target: string;
+      label: string;
+      isDefault?: boolean;
+    }>;
+    rootNodeId: string;
+  };
+}
+
 export interface Project {
   id: string;
   name: string;

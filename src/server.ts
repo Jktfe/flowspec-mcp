@@ -27,6 +27,11 @@ import { updateRegionSchema, handleUpdateRegion } from './tools/updateRegion.js'
 import { removeRegionSchema, handleRemoveRegion } from './tools/removeRegion.js';
 import { updateEdgeSchema, handleUpdateEdge } from './tools/updateEdge.js';
 import { cloneProjectSchema, handleCloneProject } from './tools/cloneProject.js';
+// v4 decision tree tools
+import { listDecisionTreesSchema, handleListDecisionTrees } from './tools/listDecisionTrees.js';
+import { getDecisionTreeSchema, handleGetDecisionTree } from './tools/getDecisionTree.js';
+import { deleteDecisionTreeSchema, handleDeleteDecisionTree } from './tools/deleteDecisionTree.js';
+import { analyseDecisionTreeSchema, handleAnalyseDecisionTree } from './tools/analyseDecisionTree.js';
 import { MODE } from './config.js';
 
 export function createServer() {
@@ -223,7 +228,37 @@ export function createServer() {
     handleCloneProject
   );
 
-  console.error(`FlowSpec MCP v5.0.0 — mode: ${MODE}`);
+  // ─── Decision tree tools (v4) ───────────────────────────────────
+
+  server.tool(
+    'flowspec_list_decision_trees',
+    'List all decision trees for a project',
+    listDecisionTreesSchema.shape,
+    handleListDecisionTrees
+  );
+
+  server.tool(
+    'flowspec_get_decision_tree',
+    'Get a decision tree with full node/edge structure',
+    getDecisionTreeSchema.shape,
+    handleGetDecisionTree
+  );
+
+  server.tool(
+    'flowspec_delete_decision_tree',
+    'Delete a decision tree from a project',
+    deleteDecisionTreeSchema.shape,
+    handleDeleteDecisionTree
+  );
+
+  server.tool(
+    'flowspec_analyse_decision_tree',
+    'Analyse a decision tree: depth, orphans, outcomes, under-branched decisions',
+    analyseDecisionTreeSchema.shape,
+    handleAnalyseDecisionTree
+  );
+
+  console.error(`FlowSpec MCP v5.4.0 — mode: ${MODE}`);
 
   return server;
 }
