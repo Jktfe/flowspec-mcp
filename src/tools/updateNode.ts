@@ -18,7 +18,7 @@ export async function handleUpdateNode(args: z.infer<typeof updateNodeSchema>) {
     // Look up the existing node type so we can normalise correctly
     const project = await getProject(args.projectId);
     const existing = project?.canvas_state?.nodes?.find((n) => n.id === args.nodeId);
-    const nodeType = (existing?.type ?? 'datapoint') as 'datapoint' | 'component' | 'transform' | 'table';
+    const nodeType = (existing?.type ?? 'datapoint') as 'datapoint' | 'component' | 'transform' | 'table' | 'actor';
     updates.data = normaliseNodeData(nodeType, args.data);
   }
   if (args.position) updates.position = args.position;

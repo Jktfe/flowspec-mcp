@@ -518,7 +518,7 @@ function validateOrphans(nodes: any[], edges: any[]): OrphanNodeIssue[] {
   }
 
   for (const n of nodes) {
-    if (n.type === 'image' || n.type === 'screen') continue;
+    if (n.type === 'image' || n.type === 'screen' || n.type === 'actor') continue;
     if (!connectedIds.has(n.id)) {
       issues.push({
         violation: 'orphan-node',
@@ -574,7 +574,7 @@ function validateDuplicateLabels(nodes: any[]): DuplicateLabelIssue[] {
   const groups = new Map<string, { ids: string[]; type: string }>();
 
   for (const n of nodes) {
-    if (n.type === 'image' || n.type === 'screen') continue;
+    if (n.type === 'image' || n.type === 'screen' || n.type === 'actor') continue;
     const label = ((n.data?.label ?? '') as string).trim().toLowerCase();
     if (!label) continue;
     const key = `${n.type}:${label}`;

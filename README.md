@@ -62,7 +62,7 @@ Local mode connects to the FlowSpec desktop server at `http://localhost:3456`.
 - **`flowspec_create_project`** — Create a new project
 - **`flowspec_update_project`** — Update project name or canvas state
 - **`flowspec_delete_project`** — Delete a project
-- **`flowspec_create_node`** — Add a node (datapoint, component, transform, table)
+- **`flowspec_create_node`** — Add a node (datapoint, component, transform, table, actor)
 - **`flowspec_update_node`** — Update node data or position
 - **`flowspec_delete_node`** — Remove a node and connected edges
 - **`flowspec_create_edge`** — Connect two nodes with an edge type

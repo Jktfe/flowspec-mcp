@@ -7,7 +7,7 @@
  * module bridges the two.
  */
 
-type NodeType = 'datapoint' | 'component' | 'transform' | 'table';
+type NodeType = 'datapoint' | 'component' | 'transform' | 'table' | 'actor';
 
 function normaliseDataPoint(data: Record<string, unknown>): Record<string, unknown> {
   const out = { ...data };
@@ -30,6 +30,13 @@ function normaliseDataPoint(data: Record<string, unknown>): Record<string, unkno
   if (!out.source) out.source = 'captured';
   if (out.sourceDefinition === undefined) out.sourceDefinition = '';
 
+  return out;
+}
+
+function normaliseActor(data: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...data };
+  if (!out.actorType) out.actorType = 'tbd';
+  if (!out.description) out.description = '';
   return out;
 }
 
@@ -85,6 +92,7 @@ export function normaliseNodeData(
     case 'component': return normaliseComponent(data);
     case 'transform': return normaliseTransform(data);
     case 'table':     return data; // table format already matches
+    case 'actor':     return normaliseActor(data);
     default:          return data;
   }
 }

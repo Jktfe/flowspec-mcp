@@ -41,6 +41,14 @@ export interface TransformData {
   members?: WorkflowMember[];  // only when type === 'workflow'
 }
 
+export type ActorType = 'user' | 'ai' | 'third-party' | 'tbd';
+
+export interface ActorData {
+  label: string;
+  actorType: ActorType;
+  description: string;
+}
+
 export interface TableData {
   label: string;
   columns: Array<{ name: string; type: DataType }>;

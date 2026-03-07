@@ -4,7 +4,7 @@ import { searchNodes } from '../db.js';
 export const searchNodesSchema = z.object({
   query: z.string().describe('Search term to match against node labels'),
   nodeType: z
-    .enum(['datapoint', 'component', 'transform'])
+    .enum(['datapoint', 'component', 'transform', 'table', 'actor'])
     .optional()
     .describe('Filter by node type'),
 });

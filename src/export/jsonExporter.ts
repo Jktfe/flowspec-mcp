@@ -111,7 +111,7 @@ export function exportToJson(
   projectName: string = 'Untitled Project',
   screens: Screen[] = []
 ): string {
-  const exportableNodes = nodes.filter((n) => n.type !== 'image' && n.type !== 'screen');
+  const exportableNodes = nodes.filter((n) => n.type !== 'image' && n.type !== 'screen' && n.type !== 'actor');
 
   const dataPointNodes = exportableNodes.filter((n) => n.type === 'datapoint');
   const componentNodes = exportableNodes.filter((n) => n.type === 'component');

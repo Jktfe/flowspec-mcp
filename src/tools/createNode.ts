@@ -4,7 +4,7 @@ import { normaliseNodeData } from '../normalise.js';
 
 export const createNodeSchema = z.object({
   projectId: z.string().describe('UUID of the project'),
-  type: z.enum(['datapoint', 'component', 'transform', 'table']).describe('Node type'),
+  type: z.enum(['datapoint', 'component', 'transform', 'table', 'actor']).describe('Node type'),
   position: z.object({
     x: z.number().describe('X position on canvas'),
     y: z.number().describe('Y position on canvas'),
