@@ -40,6 +40,13 @@ function normaliseActor(data: Record<string, unknown>): Record<string, unknown> 
   return out;
 }
 
+function normaliseTable(data: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...data };
+  if (!Array.isArray(out.columns)) out.columns = [];
+  if (!out.sourceType) out.sourceType = 'database';
+  return out;
+}
+
 function normaliseComponent(data: Record<string, unknown>): Record<string, unknown> {
   const out = { ...data };
   if (!Array.isArray(out.displays)) out.displays = [];
@@ -91,7 +98,7 @@ export function normaliseNodeData(
     case 'datapoint': return normaliseDataPoint(data);
     case 'component': return normaliseComponent(data);
     case 'transform': return normaliseTransform(data);
-    case 'table':     return data; // table format already matches
+    case 'table':     return normaliseTable(data);
     case 'actor':     return normaliseActor(data);
     default:          return data;
   }

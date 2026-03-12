@@ -5,7 +5,7 @@ import { normaliseNodeData } from '../normalise.js';
 export const updateNodeSchema = z.object({
   projectId: z.string().describe('UUID of the project'),
   nodeId: z.string().describe('UUID of the node to update'),
-  data: z.record(z.unknown()).optional().describe('Node data fields to merge (label, type, constraints, etc.)'),
+  data: z.record(z.unknown()).optional().describe('Node data fields to merge. Key fields by type:\n- datapoint: { label, dataType, source (captured|retrieved|inferred) }\n- component: { label, displays: string[], captures: string[] }\n- transform: { label, transformType, inputs: string[], outputs: string[], logic: string }\n- table: { label, columns: [{name, type}], sourceType (database|api|file|manual) }\n- actor: { label, actorType (user|ai|third-party|tbd) }'),
   position: z.object({
     x: z.number(),
     y: z.number(),
