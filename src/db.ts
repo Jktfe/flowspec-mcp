@@ -998,3 +998,70 @@ export async function deleteDecisionTreeViaApi(projectId: string, treeId: string
   `;
   return rows.length > 0;
 }
+
+// ─── Logic Board ─────────────────────────────────────────────────────────────
+
+export interface LogicBoardResult {
+  id: string | null;
+  boardData: { nodes: unknown[]; edges: unknown[] };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export async function getLogicBoard(projectId: string): Promise<LogicBoardResult> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/logic-board`);
+    if (!res.ok) return { id: null, boardData: { nodes: [], edges: [] } };
+    return res.json() as Promise<LogicBoardResult>;
+  }
+
+  const rows = await sql!`
+    SELECT id, board_data, created_at, updated_at
+    FROM logic_boards
+    WHERE project_id = ${projectId}
+    LIMIT 1
+  `;
+  if (rows.length === 0) return { id: null, boardData: { nodes: [], edges: [] } };
+  const row = rows[0];
+  try {
+    const boardData = typeof row.board_data === 'string' ? JSON.parse(row.board_data as string) : row.board_data;
+    return {
+      id: row.id as string,
+      boardData: boardData as { nodes: unknown[]; edges: unknown[] },
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  } catch {
+    return { id: null, boardData: { nodes: [], edges: [] } };
+  }
+}
+
+export async function upsertLogicBoard(
+  projectId: string,
+  boardData: { nodes: unknown[]; edges: unknown[] }
+): Promise<string> {
+  if (MODE === 'local') {
+    const res = await fetchLocal(`/api/projects/${projectId}/logic-board`, {
+      method: 'PUT',
+      body: JSON.stringify({ boardData }),
+    });
+    if (!res.ok) throw new Error(`Failed to upsert logic board: ${res.status}`);
+    const json = await res.json() as { id: string };
+    return json.id;
+  }
+
+  const { randomUUID } = await import('node:crypto');
+  const existing = await sql!`SELECT id FROM logic_boards WHERE project_id = ${projectId} LIMIT 1`;
+  const id = existing.length > 0 ? (existing[0].id as string) : `lb-${randomUUID()}`;
+  const now = new Date().toISOString();
+  const boardDataJson = JSON.stringify(boardData);
+
+  await sql!`
+    INSERT INTO logic_boards (id, project_id, board_data, created_at, updated_at)
+    VALUES (${id}, ${projectId}, ${boardDataJson}, ${now}, ${now})
+    ON CONFLICT (project_id) DO UPDATE SET
+      board_data = ${boardDataJson},
+      updated_at = ${now}
+  `;
+  return id;
+}

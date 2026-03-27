@@ -32,6 +32,9 @@ import { listDecisionTreesSchema, handleListDecisionTrees } from './tools/listDe
 import { getDecisionTreeSchema, handleGetDecisionTree } from './tools/getDecisionTree.js';
 import { deleteDecisionTreeSchema, handleDeleteDecisionTree } from './tools/deleteDecisionTree.js';
 import { analyseDecisionTreeSchema, handleAnalyseDecisionTree } from './tools/analyseDecisionTree.js';
+// v5 logic board tools
+import { getLogicBoardSchema, handleGetLogicBoard } from './tools/getLogicBoard.js';
+import { upsertLogicBoardSchema, handleUpsertLogicBoard } from './tools/upsertLogicBoard.js';
 import { MODE } from './config.js';
 
 // FLOWSPEC_TOOLS=core  → 11 essential tools only (~2,900 tokens)
@@ -262,9 +265,25 @@ export function createServer() {
       analyseDecisionTreeSchema.shape,
       handleAnalyseDecisionTree
     );
+
+    // ─── Extras: v5 logic board tools ──────────────────────────────
+
+    server.tool(
+      'flowspec_get_logic_board',
+      'Get the Boring Logic board for a project — a separate canvas of input/output/process/decision nodes sketching data logic',
+      getLogicBoardSchema.shape,
+      handleGetLogicBoard
+    );
+
+    server.tool(
+      'flowspec_upsert_logic_board',
+      'Save (create or replace) the Boring Logic board for a project',
+      upsertLogicBoardSchema.shape,
+      handleUpsertLogicBoard
+    );
   }
 
-  console.error(`FlowSpec MCP v5.4.0 — mode: ${MODE}, tools: ${TOOLS_MODE} (${TOOLS_MODE === 'core' ? 11 : 30})`);
+  console.error(`FlowSpec MCP v5.6.0 — mode: ${MODE}, tools: ${TOOLS_MODE} (${TOOLS_MODE === 'core' ? 11 : 32})`);
 
   return server;
 }
